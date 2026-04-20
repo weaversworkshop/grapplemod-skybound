@@ -1,22 +1,15 @@
 package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
-import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
-import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
 import com.yyon.grapplinghook.network.S2CPayload;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.NullableDirection;
 import com.yyon.grapplinghook.util.Vec;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.Minecraft;
-import net.minecraft.core.Direction;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 
 /*
@@ -61,24 +54,6 @@ public record RopeSegmentUpdateS2CPayload(int hookId, boolean shouldAdd, int ind
 	@Override
 	public Type<RopeSegmentUpdateS2CPayload> type() {
 		return PAYLOAD_TYPE;
-	}
-
-	@Override
-	public void process(ClientPlayNetworking.Context ctx) {
-		Level world = Minecraft.getInstance().level;
-		Entity grapple = world.getEntity(this.hookId);
-		if (grapple == null)
-			return;
-
-
-		if (grapple instanceof GrapplinghookEntity hookEntity) {
-			RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
-			if (this.shouldAdd) {
-				segmentHandler.actuallyAddSegment(this.index, this.pos, this.bottomFacing, this.topFacing);
-			} else {
-				segmentHandler.removeSegment(this.index);
-			}
-		}
 	}
 
 }

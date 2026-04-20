@@ -1,17 +1,12 @@
 package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
-import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
 import com.yyon.grapplinghook.network.S2CPayload;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Vector3f;
 
@@ -52,30 +47,4 @@ public record GrappleAttachHookS2CPayload(int hookId, Vector3f attachPos) implem
         return PAYLOAD_TYPE;
     }
 
-    @Override
-    public void process(ClientPlayNetworking.Context ctx) {
-        ctx.client().execute(() -> {
-            Level world = Minecraft.getInstance().level;
-
-            if (world == null) {
-                GrappleMod.LOGGER.warn("Network Message received in invalid context (World not present | GrappleAttachPos)");
-                return;
-            }
-
-            Entity e = world.getEntity(this.hookId);
-
-            if (e == null) {
-                GrappleMod.LOGGER.warn("GrappleAttachPos received for a hook that doesn't exist on the client side! (yet?)");
-                return;
-            }
-
-            if (e instanceof GrapplinghookEntity grapple) {
-                if (grapple.getAttachedEntityId() != -1) {
-                    return;
-                }
-
-                grapple.setAttachPos(this.attachPos);
-            }
-        });
-    }
 }

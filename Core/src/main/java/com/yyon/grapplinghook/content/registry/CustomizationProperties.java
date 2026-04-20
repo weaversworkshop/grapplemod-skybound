@@ -85,9 +85,6 @@ public class CustomizationProperties {
             new DoubleProperty(c().hookSpeed, HOOK_THROW_SPEED_MIN, HOOK_THROW_SPEED_MAX)
     );
 
-    public static final Entry<BooleanProperty> HOOK_REEL_IN_ON_SNEAK =
-            property("hook_reel_in_on_sneak", () -> new BooleanProperty(true));
-
     public static final Entry<DoubleProperty> HOOK_THROW_ANGLE =
             property("hook_throw_angle", () -> new DoubleProperty(0.0D, 0.0D, 45.0D));
 

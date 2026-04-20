@@ -98,7 +98,6 @@ public class HookTemplates {
             property(HOOK_GRAVITY_MULTIPLIER, 50.0d),
             property(DOUBLE_HOOK_ANGLE, 30.0d),
             property(DOUBLE_HOOK_ANGLE_ON_SNEAK, 25.0d),
-            property(HOOK_REEL_IN_ON_SNEAK, false),
 
             property(MOTOR_ACTIVATION, CrouchToggle.WHEN_NOT_CROUCHING),
             property(DOUBLE_SMART_MOTOR, true),
@@ -122,7 +121,6 @@ public class HookTemplates {
             property(HOOK_GRAVITY_MULTIPLIER, 50.0d),
             property(DOUBLE_HOOK_ANGLE, 30.0d),
             property(DOUBLE_HOOK_ANGLE_ON_SNEAK, 25.0d),
-            property(HOOK_REEL_IN_ON_SNEAK, false),
 
             property(MOTOR_ACTIVATION, CrouchToggle.WHEN_NOT_CROUCHING),
             property(DOUBLE_SMART_MOTOR, true),

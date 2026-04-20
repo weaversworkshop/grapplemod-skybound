@@ -1,9 +1,7 @@
 package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
-import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.network.S2CPayload;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -42,11 +40,6 @@ public record GrappleDetachS2CPayload(int holderId) implements S2CPayload {
     @Override
     public Type<GrappleDetachS2CPayload> type() {
         return PAYLOAD_TYPE;
-    }
-
-    @Override
-    public void process(ClientPlayNetworking.Context ctx) {
-        GrappleModClient.get().getClientControllerManager().receiveGrappleDetach(this.holderId);
     }
 
 }

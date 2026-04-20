@@ -55,7 +55,7 @@ public class CustomizationCategories {
     public static final Entry<CustomizationCategory> HOOK_THROWER = category("hook_thrower", () -> new CustomizationCategory(
             ModItems.HOOK_THROWER_UPGRADE.get(),
             HOOK_GRAVITY_MULTIPLIER.get(), HOOK_THROW_SPEED.get(), HOOK_THROW_ANGLE.get(), HOOK_THROW_ANGLE_ON_SNEAK.get(),
-            HOOK_REEL_IN_ON_SNEAK.get(), DETACH_HOOK_ON_KEY_UP.get()
+            DETACH_HOOK_ON_KEY_UP.get()
     ));
 
     public static final Entry<CustomizationCategory> MOTOR = category("motor", () -> new CustomizationCategory(

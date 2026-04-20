@@ -13,6 +13,10 @@ subprojects {
             : project.properties["mod_version"].toString()
     project.setVersion("%s+%s".formatted(modVer, project.properties["minecraft_version"]))
 
+    base {
+        archivesName = project.archives_base_name
+    }
+
     repositories {
         exclusiveContent {
             forRepository {

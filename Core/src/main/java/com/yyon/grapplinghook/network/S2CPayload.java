@@ -23,6 +23,12 @@ public record ...S2CPayload() implements S2CPayload {
 	}
 }
  */
-public interface S2CPayload extends CustomPacketPayload, S2CPayloadProcessor {
+/**
+ * Server-to-client payload marker. Processing lives in client-only
+ * {@code com.yyon.grapplinghook.client.network.ClientNetworkReceivers} —
+ * payload classes themselves must stay clean of client-only references so
+ * Fabric's transformer can load them on dedicated servers.
+ */
+public interface S2CPayload extends CustomPacketPayload {
 
 }

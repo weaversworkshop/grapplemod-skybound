@@ -14,6 +14,10 @@ String modVer = isModVersionDefined
 group = project.maven_group
 version = "%s+%s.fabric".formatted(modVer, project.properties["minecraft_version"])
 
+base {
+    archivesName = project.archives_base_name
+}
+
 loom {
     accessWidenerPath = file("src/main/resources/grapplemod.accesswidener")
 
@@ -21,6 +25,13 @@ loom {
         client {
             runDir "run/client"
             ideConfigGenerated true
+        }
+
+        client2 {
+            runDir "run/client2"
+            client()
+            ideConfigGenerated true
+            programArgs "--username", "Tester2"
         }
 
         server {

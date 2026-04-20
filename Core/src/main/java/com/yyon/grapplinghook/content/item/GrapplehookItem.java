@@ -3,6 +3,7 @@ package com.yyon.grapplinghook.content.item;
 import com.yyon.grapplinghook.api.GrappleModServerEvents;
 import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.client.ModKeys;
+import com.yyon.grapplinghook.config.GrapplePropertyConfigLoader;
 import com.yyon.grapplinghook.content.customization.PropertyDelta;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
 import com.yyon.grapplinghook.content.item.type.ICustomizationApplicable;
@@ -44,6 +45,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
@@ -309,10 +311,6 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 					tooltipComponents.add(text.copy().withStyle(ChatFormatting.DARK_GRAY));
 			}
 
-			if (custom.get(HOOK_REEL_IN_ON_SNEAK.get())) {
-				tooltipComponents.add(TextUtils.keybinding("grappletooltip.reelin.desc", options.keyShift));
-			}
-
 			return;
 		}
 
@@ -540,9 +538,12 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		GrapplinghookEntity hookOffHand = getHookEntityOffHand(thrower);
 		GrapplinghookEntity hookMainHand = getHookEntityMainHand(thrower);
 
+		tryFlingAttachedEntity(thrower, hookOffHand);
+		tryFlingAttachedEntity(thrower, hookMainHand);
+
 		setHookEntityOffHand(thrower, null);
 		setHookEntityMainHand(thrower, null);
-		
+
 		if (hookOffHand != null) hookOffHand.removeServer();
 		if (hookMainHand != null) hookMainHand.removeServer();
 
@@ -550,12 +551,13 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		GrappleModServerEvents.HOOK_RETRACT.invoker().onHookRetracted(thrower);
 		GrappleModUtils.sendToCorrectClient(new GrappleDetachS2CPayload(id), thrower.getId(), thrower.level());
 	}
-	
+
 	public void detachOffHand(LivingEntity thrower) {
 
 		GrapplinghookEntity hookOffHand = getHookEntityOffHand(thrower);
+		tryFlingAttachedEntity(thrower, hookOffHand);
 		setHookEntityOffHand(thrower, null);
-		
+
 		if (hookOffHand != null) hookOffHand.removeServer();
 
 		int id = thrower.getId();
@@ -571,8 +573,9 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 	
 	public void detachMainHand(LivingEntity thrower) {
 		GrapplinghookEntity hookMainHand = getHookEntityMainHand(thrower);
+		tryFlingAttachedEntity(thrower, hookMainHand);
 		setHookEntityMainHand(thrower, null);
-		
+
 		if (hookMainHand != null) hookMainHand.removeServer();
 		
 		int id = thrower.getId();
@@ -587,6 +590,43 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		}
 	}
 	
+	/**
+	 * If the thrower is sneaking and the hook is attached to a LivingEntity,
+	 * fling that entity toward the thrower on release.
+	 *
+	 * <p>Direction is mob→player with a small upward bias (~10°) that's
+	 * damped when the mob is above the player, so shooting a mob from below
+	 * doesn't launch it further upward. Magnitude scales with sqrt(distance)
+	 * times the configurable {@code flingBasePower}.</p>
+	 *
+	 * <p>Sets the mob's velocity on the server and marks it {@code hurtMarked}
+	 * so the entity tracker flushes the motion to clients on the next tick.</p>
+	 */
+	private void tryFlingAttachedEntity(LivingEntity thrower, GrapplinghookEntity hook) {
+		if (hook == null) return;
+		if (!thrower.isCrouching()) return;
+		if (thrower.level().isClientSide) return;
+
+		Entity attached = hook.getAttachedEntity();
+		if (!(attached instanceof LivingEntity mob)) return;
+
+		Vec3 mobToPlayer = thrower.position().subtract(mob.position());
+		double dist = mobToPlayer.length();
+		if (dist < 1.0E-3) return;
+
+		Vec3 dir = mobToPlayer.scale(1.0 / dist);
+
+		double verticalBias = Math.sin(Math.toRadians(GrapplePropertyConfigLoader.CONFIG.flingVerticalAngle));
+		double biasScale = Math.max(0.0, 1.0 - Math.abs(dir.y));
+		Vec3 biasedDir = new Vec3(dir.x, dir.y + verticalBias * biasScale, dir.z).normalize();
+
+		double magnitude = Math.sqrt(dist) * GrapplePropertyConfigLoader.CONFIG.flingBasePower;
+		Vec3 velocity = biasedDir.scale(magnitude);
+
+		mob.setDeltaMovement(velocity);
+		mob.hurtMarked = true;
+	}
+
 	public GrapplinghookEntity createGrapplehookEntity(ItemStack stack, Level worldIn, LivingEntity entityLiving, boolean isMainHand, boolean isDoublePair) {
 		GrapplinghookEntity hookEntity = new GrapplinghookEntity(worldIn, entityLiving, isMainHand, this.getCustomizationsOrDefault(stack), isDoublePair);
 		ServerHookEntityTracker.addGrappleEntity(entityLiving, hookEntity);

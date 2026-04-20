@@ -55,7 +55,6 @@
     "grappletooltip.repelleritemmove.desc": "Move",
     "grappletooltip.longfallbootsrecipe.desc": "Right click a Grappling Hook Modifier block with Feather Falling IV Diamond Boots to obtain!",
     "grappletooltip.longfallboots.desc": "Cancels all fall damage when worn.",
-    "grappletooltip.reelin.desc": "Reel in hook (if hook is not attached to surface)",
     "grappletooltip.negate.desc": "No",
     "grapple_tooltip.rocket_item.description": "Propels you forward with the power of rockets!",
     "grapple_tooltip.rocket_item.controls": "Activate Rocket (Hold)",
@@ -155,7 +154,6 @@
     "grapple_property.grapplemod.sticky_rope": "Sticky Rope",
 
     "grapple_property.grapplemod.hook_gravity_multiplier": "Gravity on Hook",
-    "grapple_property.grapplemod.hook_reel_in_on_sneak": "Sneak to Reel In",
     "grapple_property.grapplemod.hook_throw_angle": "Throwing Angle",
     "grapple_property.grapplemod.hook_throw_angle_on_sneak": "Throwing Angle (when sneaking)",
     "grapple_property.grapplemod.hook_throw_speed": "Throw Speed",
@@ -202,7 +200,6 @@
     "grapple_property.grapplemod.sticky_rope.desc": "If the rope bends around a block as it is being thrown, attach at bend",
 
     "grapple_property.grapplemod.hook_gravity_multiplier.desc": "Gravity on hook when thrown",
-    "grapple_property.grapplemod.hook_reel_in_on_sneak.desc": "Before the hook is attached, crouching will stop the hook from moving farther and slowly reel it in",
     "grapple_property.grapplemod.hook_throw_angle.desc": "Throws the grappling hook above the crosshairs by this angle",
     "grapple_property.grapplemod.hook_throw_angle_on_sneak.desc": "Throws the grappling hook above the crosshairs by this angle when crouching",
     "grapple_property.grapplemod.hook_throw_speed.desc": "Speed of hook when thrown",

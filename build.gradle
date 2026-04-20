@@ -81,12 +81,24 @@ def packageCompatModules = tasks.register('bundle-compat-modules', Copy) {
     description = "Takes the built compatability modules and includes them in the jar"
     dependsOn collectJars
 
-    from new File(project(":Core").layout.buildDirectory.asFile.get(), "resources/main/").getPath()
+    // Read Core's SOURCE fabric.mod.json, not the already-processed copy from
+    // Core's build/resources/main — Core's processResources has already
+    // replaced $compatibility_jars with a placeholder space, so expanding that
+    // copy a second time is a no-op. Re-expanding the source here gives us
+    // the final version of the file, with all other placeholders (version,
+    // loader_version, etc.) also filled in, since we hand through
+    // project(":Core").properties below.
+    from new File(project(":Core").projectDir, "src/main/resources/").getPath()
     include("fabric.mod.json")
     into buildDir
 
-    // Substitute in the compatibility jars
-    expand("compatibility_jars": () -> {
+    // Re-expanding the source template means every placeholder
+    // (version, loader_version, yacl_version, etc.) has to be provided,
+    // not just compatibility_jars. Mirror Core's processResources: start
+    // from Core's full property bag and override compatibility_jars.
+    Map expandArgs = new HashMap<>(project(":Core").properties)
+    expandArgs.put("version", project(":Core").version)
+    expandArgs.put("compatibility_jars", () -> {
         if(project.property("should_bundle_compat_modules").is(false))
             return ""
 
@@ -96,6 +108,7 @@ def packageCompatModules = tasks.register('bundle-compat-modules', Copy) {
                 .toArray(String[]::new)
         return String.join(",", compatJarFileNames)
     })
+    expand(expandArgs)
 
     // Swap out bundled jar for
     doLast {
@@ -107,9 +120,15 @@ def packageCompatModules = tasks.register('bundle-compat-modules', Copy) {
                 .findFirst()
                 .orElseThrow().name
 
-        exec {
-            workingDir buildDir
-            commandLine 'jar', 'uf', modFileName, 'compat/*', 'fabric.mod.json'
+        // Ant's jar task with update=true merges files into the existing
+        // archive in place. Gradle 9 removed Project.exec() for script tasks,
+        // so shelling out to the `jar` CLI isn't an option — Ant is built in
+        // and doesn't depend on the JDK's jar being on PATH.
+        ant.jar(destfile: "${buildDir}/${modFileName}", update: "true") {
+            fileset(dir: buildDir) {
+                include(name: 'fabric.mod.json')
+            }
+            zipfileset(dir: "${buildDir}/compat", prefix: "compat")
         }
     }
 }

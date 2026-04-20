@@ -1,28 +1,18 @@
 package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
-import com.yyon.grapplinghook.client.GrappleModClient;
-import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
-import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
-import com.yyon.grapplinghook.content.physics.PhysicsControllers;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;
 import com.yyon.grapplinghook.network.S2CPayload;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
-import com.yyon.grapplinghook.util.Vec;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Vector3f;
-
-import java.util.LinkedList;
 
 /*
  * This file is part of GrappleMod.
@@ -45,35 +35,74 @@ import java.util.LinkedList;
 
 public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId, GrappleAttachTarget attachTarget, RopeSnapshot ropeState, HookCustomization customization) implements S2CPayload {
 
-    public sealed interface GrappleAttachTarget permits GrappleAttachTarget.Block, GrappleAttachTarget.Entity {
-        byte TAG_BLOCK = 0;
-        byte TAG_ENTITY = 1;
+    /**
+     * Wire-stable discriminator. Each variant picks an explicit byte tag so that
+     * reordering the enum or inserting new kinds does not shift existing tags.
+     */
+    public enum AttachTargetKind {
+        BLOCK((byte) 0),
+        ENTITY((byte) 1),
+        CONTRAPTION((byte) 2);
+
+        private final byte tag;
+        AttachTargetKind(byte tag) { this.tag = tag; }
+        public byte tag() { return tag; }
+
+        public static AttachTargetKind fromTag(byte t) {
+            for (AttachTargetKind k : values()) {
+                if (k.tag == t) return k;
+            }
+            throw new IllegalStateException("Unknown GrappleAttachTarget tag: " + t);
+        }
+    }
+
+    public sealed interface GrappleAttachTarget
+            permits GrappleAttachTarget.Block, GrappleAttachTarget.Entity, GrappleAttachTarget.EntityOffset {
+
+        AttachTargetKind kind();
 
         StreamCodec<RegistryFriendlyByteBuf, GrappleAttachTarget> STREAM_CODEC = new StreamCodec<>() {
             @Override
             public GrappleAttachTarget decode(RegistryFriendlyByteBuf buf) {
-                byte tag = buf.readByte();
-                return switch (tag) {
-                    case TAG_BLOCK -> new Block(BlockPos.STREAM_CODEC.decode(buf));
-                    case TAG_ENTITY -> new Entity(buf.readVarInt());
-                    default -> throw new IllegalStateException("Unknown GrappleAttachTarget tag: " + tag);
+                AttachTargetKind kind = AttachTargetKind.fromTag(buf.readByte());
+                return switch (kind) {
+                    case BLOCK -> new Block(BlockPos.STREAM_CODEC.decode(buf));
+                    case ENTITY -> new Entity(buf.readVarInt());
+                    case CONTRAPTION -> {
+                        int id = buf.readVarInt();
+                        double x = buf.readDouble();
+                        double y = buf.readDouble();
+                        double z = buf.readDouble();
+                        yield new EntityOffset(id, new Vec3(x, y, z));
+                    }
                 };
             }
 
             @Override
             public void encode(RegistryFriendlyByteBuf buf, GrappleAttachTarget value) {
-                if (value instanceof Block b) {
-                    buf.writeByte(TAG_BLOCK);
-                    BlockPos.STREAM_CODEC.encode(buf, b.pos());
-                } else if (value instanceof Entity e) {
-                    buf.writeByte(TAG_ENTITY);
-                    buf.writeVarInt(e.id());
+                buf.writeByte(value.kind().tag());
+                switch (value) {
+                    case Block b -> BlockPos.STREAM_CODEC.encode(buf, b.pos());
+                    case Entity e -> buf.writeVarInt(e.id());
+                    case EntityOffset eo -> {
+                        buf.writeVarInt(eo.id());
+                        buf.writeDouble(eo.localOffset().x);
+                        buf.writeDouble(eo.localOffset().y);
+                        buf.writeDouble(eo.localOffset().z);
+                    }
                 }
             }
         };
 
-        record Block(BlockPos pos) implements GrappleAttachTarget {}
-        record Entity(int id) implements GrappleAttachTarget {}
+        record Block(BlockPos pos) implements GrappleAttachTarget {
+            @Override public AttachTargetKind kind() { return AttachTargetKind.BLOCK; }
+        }
+        record Entity(int id) implements GrappleAttachTarget {
+            @Override public AttachTargetKind kind() { return AttachTargetKind.ENTITY; }
+        }
+        record EntityOffset(int id, Vec3 localOffset) implements GrappleAttachTarget {
+            @Override public AttachTargetKind kind() { return AttachTargetKind.CONTRAPTION; }
+        }
     }
 
     public static final ResourceLocation IDENTIFIER = GrappleMod.id("grapple_attach");
@@ -102,57 +131,4 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
         return PAYLOAD_TYPE;
     }
 
-    @Override
-    public void process(ClientPlayNetworking.Context ctx) {
-        ctx.client().execute(() -> {
-            Level world = Minecraft.getInstance().level;
-
-            if(world == null) {
-                GrappleMod.LOGGER.warn("Network Message received in invalid context (World not present | GrappleAttach)");
-                return;
-            }
-
-            Entity e = world.getEntity(this.hookId());
-
-            if (e == null) {
-                GrappleMod.LOGGER.warn("GrappleAttachMessage received for a hook that doesn't exist on the client side! (yet?)");
-                return;
-            }
-
-            if (e instanceof GrapplinghookEntity grapple) {
-
-                grapple.clientAttach(this.hookPos);
-
-                BlockPos hookedBlock = null;
-                switch (this.attachTarget) {
-                    case GrappleAttachTarget.Block b -> hookedBlock = b.pos();
-                    case GrappleAttachTarget.Entity ent -> {
-                        grapple.setAttachedEntityIdClient(ent.id());
-                        Entity attached = world.getEntity(ent.id());
-                        if (attached != null) {
-                            grapple.setAttachedEntityClient(attached);
-                        }
-                        GrappleMod.LOGGER.info("Client attach entity id: {}", ent.id());
-                    }
-                }
-
-                RopeSegmentHandler segmentHandler = grapple.getSegmentHandler();
-                segmentHandler.segments = new LinkedList<>(this.ropeState.getSegments());
-                segmentHandler.segmentTopSides = new LinkedList<>(this.ropeState.getTopSides());
-                segmentHandler.segmentBottomSides = new LinkedList<>(this.ropeState.getBottomSides());
-
-                Entity holder = world.getEntity(this.holderId);
-
-                if (holder == null) {
-                    GrappleMod.LOGGER.warn("Network Message received in invalid context (Holder does not exist | GrappleAttach)");
-                    return;
-                }
-
-                segmentHandler.forceSetPos(new Vec(this.hookPos), Vec.positionVec(holder));
-                GrappleModClient.get()
-                        .getClientControllerManager()
-                        .createControl(PhysicsControllers.GRAPPLING_HOOK, this.hookId(), this.holderId(), world, hookedBlock, this.customization);
-            }
-        });
-    }
 }

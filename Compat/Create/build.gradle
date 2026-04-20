@@ -1,0 +1,71 @@
+plugins {
+    id 'fabric-loom' version '1.14-SNAPSHOT'
+    id 'maven-publish'
+}
+
+loom {
+
+    runs {
+        client {
+            runDir "run/client"
+            ideConfigGenerated true
+        }
+
+        server {
+            runDir "run/server"
+            ideConfigGenerated true
+        }
+    }
+}
+
+repositories {
+
+    // Create mod (NeoForge artifact).
+    maven {
+        name = 'Create'
+        url = 'https://maven.createmod.net'
+    }
+
+    // NeoForge — needed at compile time because Create's classes extend
+    // NeoForge-specific supertypes (e.g. IEntityWithComplexSpawn).
+    maven {
+        name = 'NeoForged'
+        url = 'https://maven.neoforged.net/releases'
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation("net.fabricmc:fabric-loader")
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    api project(path: ":Core", configuration: "namedElements")
+
+    // Create is a NeoForge mod. We add it as plain compileOnly (NOT modCompileOnly)
+    // so Loom doesn't try to remap it or bundle it. At runtime under Sinytra
+    // Connector, Create's classes are already on the classpath from NeoForge.
+    // The :slim classifier is Create's lightweight dev artifact.
+    compileOnly("com.simibubi.create:create-${project.minecraft_version}:${project.create_version}:slim") {
+        transitive = false
+    }
+
+    // NeoForge API is needed at compile time only — Create's classes extend
+    // NeoForge supertypes so javac needs them on the classpath to walk the
+    // type hierarchy. Not bundled; provided by the NeoForge environment at
+    // runtime (directly or via Sinytra Connector).
+    compileOnly("net.neoforged:neoforge:${project.neoforge_version}") {
+        transitive = false
+    }
+}
+
+remapJar {
+    archiveClassifier.set("compat")
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force("net.fabricmc:fabric-loader:${project.loader_version}")
+    }
+}

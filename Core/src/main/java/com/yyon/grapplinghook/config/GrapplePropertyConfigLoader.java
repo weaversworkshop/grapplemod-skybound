@@ -24,6 +24,10 @@ public class GrapplePropertyConfigLoader {
     private static final double MAX_VERTICAL_AIRSPEED_MAX = 10.0;
     private static final double MAX_HORIZONTAL_AIRSPEED_MIN = 0.0;
     private static final double MAX_HORIZONTAL_AIRSPEED_MAX = 10.0;
+    private static final double FLING_BASE_POWER_MIN = 0.0;
+    private static final double FLING_BASE_POWER_MAX = 3.0;
+    private static final double FLING_LAUNCH_ANGLE_BIAS_MIN = -90.0;
+    private static final double FLING_LAUNCH_ANGLE_BIAS_MAX = 90.0;
 
     public static Config CONFIG;
 
@@ -76,6 +80,8 @@ public class GrapplePropertyConfigLoader {
     private static void clampBounds(Config cfg) {
         cfg.maxVerticalAirspeed = Math.clamp(cfg.maxVerticalAirspeed, MAX_VERTICAL_AIRSPEED_MIN, MAX_VERTICAL_AIRSPEED_MAX);
         cfg.maxHorizontalAirspeed = Math.clamp(cfg.maxHorizontalAirspeed, MAX_HORIZONTAL_AIRSPEED_MIN, MAX_HORIZONTAL_AIRSPEED_MAX);
+        cfg.flingBasePower = Math.clamp(cfg.flingBasePower, FLING_BASE_POWER_MIN, FLING_BASE_POWER_MAX);
+        cfg.flingVerticalAngle = Math.clamp(cfg.flingVerticalAngle, FLING_LAUNCH_ANGLE_BIAS_MIN, FLING_LAUNCH_ANGLE_BIAS_MAX);
     }
 
     public static class Config {
@@ -88,6 +94,9 @@ public class GrapplePropertyConfigLoader {
 
         public double maxVerticalAirspeed = 4.0;
         public double maxHorizontalAirspeed = 4.0;
+
+        public double flingBasePower = 0.4;
+        public double flingVerticalAngle = 12.5;
     }
 
 }

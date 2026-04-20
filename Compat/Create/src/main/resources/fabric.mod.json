@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "grapplemodcompat-create",
+  "version": "${version}",
+  "name": "Create Compatibility Module",
+  "description": "Grapple mod compatibility for the Create mod (and Create-based addons via Sinytra Connector).",
+  "authors": [ "Weaver's Workshop" ],
+  "contact": {},
+  "license": "GPL-3.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [ "com.weaversworkshop.grapplemod.compat.create.CreateCompatEntrypoint" ]
+  },
+  "depends": {
+    "grapplemod": "${grapplemod_target_range}"
+  },
+  "recommends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": ">=${minecraft_version}"
+  },
+  "suggests": {
+    "create": "${create_target_range}"
+  }
+}

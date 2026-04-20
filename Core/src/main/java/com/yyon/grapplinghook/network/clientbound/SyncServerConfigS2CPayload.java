@@ -3,7 +3,6 @@ package com.yyon.grapplinghook.network.clientbound;
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.network.S2CPayload;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -42,11 +41,6 @@ public record SyncServerConfigS2CPayload(GrappleModCommonConfig config) implemen
 	@Override
 	public Type<SyncServerConfigS2CPayload> type() {
 		return PAYLOAD_TYPE;
-	}
-
-	@Override
-	public void process(ClientPlayNetworking.Context ctx) {
-		GrappleModCommonConfig.syncIncomingFromServer(this.config);
 	}
 
 }

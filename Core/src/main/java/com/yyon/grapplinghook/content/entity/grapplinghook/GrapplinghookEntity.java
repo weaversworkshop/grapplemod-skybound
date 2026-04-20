@@ -7,6 +7,8 @@ import com.yyon.grapplinghook.client.api.GrappleModClientEvents;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.content.registry.internal.*;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;
+import com.yyon.grapplinghook.integration.ContraptionIntegration;
+import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.network.NetworkManager;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachHookS2CPayload;
@@ -39,7 +41,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Vector3f;
 
@@ -67,6 +71,13 @@ import static com.yyon.grapplinghook.content.registry.CustomizationProperties.*;
  */
 
 public class GrapplinghookEntity extends ThrowableItemProjectile implements IExtendedSpawnPacketEntity {
+
+	/**
+	 * Partial-ticks value fed to {@link ContraptionIntegration} transforms. Using end-of-tick
+	 * (1.0f) for now and relying on render interpolation for sub-tick smoothing. Exposed as
+	 * a constant so we can try other values without code hunting.
+	 */
+	private static final float CONTRAPTION_PARTIAL_TICKS = 1.0f;
 
 	public Entity shootingEntity = null;
 	public int shootingEntityID;
@@ -108,6 +119,12 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	// Entity lock
 	private Entity attachedEntity = null;
 	private int attachedEntityId = -1;
+	/**
+	 * When attached to a contraption, this is the hit point expressed in the contraption's
+	 * local coordinate space. Non-null means "follow via {@link ContraptionIntegration}"
+	 * instead of plain center-follow.
+	 */
+	private Vec3 attachedContraptionLocalOffset = null;
 
 	/** Client-side? instantiation. Creates a very basic entity for filling in details later.**/
 	public GrapplinghookEntity(EntityType<? extends GrapplinghookEntity> type, Level world) {
@@ -279,6 +296,34 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			this.setDeltaMovement(0, 0, 0);
 		}
 
+		// Contraption entities typically return isPickable()==false, so vanilla
+		// projectile raycasts filter them out entirely. We do our own AABB scan
+		// against the ray segment for this tick and synthesize an EntityHitResult
+		// so the normal onHit flow handles the attach.
+		if (!this.isAttachedToSurface && !this.level().isClientSide) {
+			Vec3 rayStart = this.position();
+			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
+			@Nullable EntityHitResult contraptionHit = GrappleModIntegrations
+					.getContraptionIntegration()
+					.findContraptionAlongRay(this.level(), rayStart, rayEnd);
+			// TEMP DIAGNOSTIC — confirms pre-scan fires every tick and whether it detects a contraption.
+			org.slf4j.LoggerFactory.getLogger("GrappleBroadPhase").info(
+					"tick pre-scan: hookPos={}, motion={}, contraptionFound={}",
+					rayStart,
+					this.getDeltaMovement(),
+					contraptionHit == null ? "NONE" : ("entity=" + contraptionHit.getEntity().getId())
+			);
+			if (contraptionHit != null) {
+				this.onHit(contraptionHit);
+			}
+		} else if (!this.level().isClientSide) {
+			// Log when we SKIP the pre-scan so we can see why raycastContraption isn't firing.
+			org.slf4j.LoggerFactory.getLogger("GrappleBroadPhase").info(
+					"tick pre-scan SKIPPED: attached={}",
+					this.isAttachedToSurface
+			);
+		}
+
 		super.tick();
 
 		if(this.restoreCollision && !this.level().isClientSide) {
@@ -307,8 +352,18 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				return;
 			}
 
-			Vec target = Vec.positionVec(this.attachedEntity)
-					.add(new Vec(0, this.attachedEntity.getBbHeight() * 0.5, 0));
+			Vec target;
+			if (this.attachedContraptionLocalOffset != null) {
+				Vec3 worldPoint = GrappleModIntegrations.getContraptionIntegration().localToWorld(
+						this.attachedEntity,
+						this.attachedContraptionLocalOffset,
+						CONTRAPTION_PARTIAL_TICKS
+				);
+				target = new Vec(worldPoint);
+			} else {
+				target = Vec.positionVec(this.attachedEntity)
+						.add(new Vec(0, this.attachedEntity.getBbHeight() * 0.5, 0));
+			}
 
 			this.setPos(target.x, target.y, target.z);
 			this.setDeltaMovement(this.attachedEntity.getDeltaMovement());
@@ -397,7 +452,39 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				return;
 			}
 
-			// Set entity state before serverAttach so the outgoing packet carries attachedEntityId.
+			// Contraption path — per-block raycast + local-offset attach.
+			// On a miss (ray passed through empty cell inside the contraption's AABB),
+			// re-trace for blocks past the contraption so the hook keeps flying.
+			ContraptionIntegration contraptionIntegration = GrappleModIntegrations.getContraptionIntegration();
+			if (contraptionIntegration.isContraption(entity)) {
+				Vec3 rayStart = new Vec3(vec3d.x, vec3d.y, vec3d.z);
+				Vec3 rayEnd   = new Vec3(vec3d1.x, vec3d1.y, vec3d1.z);
+
+				Vec3 precisePoint = contraptionIntegration.raycastContraption(
+						entity, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
+
+				if (precisePoint != null) {
+					Vec3 localOffset = contraptionIntegration.worldToLocal(
+							entity, precisePoint, CONTRAPTION_PARTIAL_TICKS);
+
+					this.attachedEntity = entity;
+					this.attachedEntityId = entity.getId();
+					this.attachedContraptionLocalOffset = localOffset;
+
+					this.serverAttach(null, new Vec(precisePoint), null, true);
+
+					GrappleMod.LOGGER.warn(String.format(
+							"Attached to contraption %d at local offset %s",
+							this.attachedEntityId, localOffset));
+					return;
+				}
+
+				// Miss inside the AABB — re-trace past the contraption for blocks.
+				this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), vec3d, vec3d1));
+				return;
+			}
+
+			// Plain-entity attach path (mobs, etc.) — follow entity center.
 			this.attachedEntity = entity;
 			this.attachedEntityId = entity.getId();
 
@@ -461,14 +548,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 		Vec ropevec = Vec.positionVec(this).sub(farthest);
 		double d = ropevec.length();
-
-		if (this.customization.get(HOOK_REEL_IN_ON_SNEAK.get()) && this.shootingEntity.isCrouching()) {
-			double newdist = d + distToFarthest - 0.4;
-			if (newdist > 1 && newdist <= this.customization.get(MAX_ROPE_LENGTH.get())) {
-				this.ropeLength = newdist;
-			}
-		}
-
 
 		if (d + distToFarthest > this.ropeLength) {
 			Vec motion = Vec.motionVec(this);
@@ -637,9 +716,15 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
         this.thisPos = Vec.positionVec(this);
 		this.isFirstAttach = true;
 
-		GrappleAttachS2CPayload.GrappleAttachTarget attachTarget = this.attachedEntity != null
-				? new GrappleAttachS2CPayload.GrappleAttachTarget.Entity(this.attachedEntityId)
-				: new GrappleAttachS2CPayload.GrappleAttachTarget.Block(blockpos);
+		GrappleAttachS2CPayload.GrappleAttachTarget attachTarget;
+		if (this.attachedEntity != null && this.attachedContraptionLocalOffset != null) {
+			attachTarget = new GrappleAttachS2CPayload.GrappleAttachTarget.EntityOffset(
+					this.attachedEntityId, this.attachedContraptionLocalOffset);
+		} else if (this.attachedEntity != null) {
+			attachTarget = new GrappleAttachS2CPayload.GrappleAttachTarget.Entity(this.attachedEntityId);
+		} else {
+			attachTarget = new GrappleAttachS2CPayload.GrappleAttachTarget.Block(blockpos);
+		}
 
 		GrappleAttachS2CPayload shootPacket = new GrappleAttachS2CPayload(
 				this.getId(),
@@ -809,5 +894,9 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	public void setAttachedEntityClient(Entity entity) {
 		this.attachedEntity = entity;
 		this.attachedEntityId = entity != null ? entity.getId() : -1;
+	}
+
+	public void setAttachedContraptionLocalOffset(Vec3 offset) {
+		this.attachedContraptionLocalOffset = offset;
 	}
 }

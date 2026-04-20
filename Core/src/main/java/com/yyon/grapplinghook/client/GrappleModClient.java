@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.client;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.client.gui.screen.LegacyGrappleModifierBlockScreen;
+import com.yyon.grapplinghook.client.network.ClientNetworkReceivers;
 import com.yyon.grapplinghook.client.physics.ClientPhysicsControllerTracker;
 import com.yyon.grapplinghook.client.physics.context.AirFrictionPhysicsController;
 import com.yyon.grapplinghook.client.physics.context.ForcefieldPhysicsController;
@@ -69,6 +70,8 @@ public class GrappleModClient implements ClientModInitializer {
         }
 
         EntityRendererRegistry.register(ModEntities.GRAPPLE_HOOK.get(), new GrapplehookEntityRenderFactory());
+
+        ClientNetworkReceivers.registerAll();
 
         ModKeys.registerAll();
         ModEntityLayerIdentifiers.registerAll();
