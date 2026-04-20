@@ -10,6 +10,7 @@ import com.yyon.grapplinghook.content.customization.data.HookCustomization;
 import com.yyon.grapplinghook.network.NetworkManager;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachHookS2CPayload;
+import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
 import com.yyon.grapplinghook.physics.io.HookSnapshot;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import com.yyon.grapplinghook.util.GrappleModUtils;
@@ -103,6 +104,10 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	public boolean foundBlock = false;
 	public boolean wasInAir = false;
 	public BlockPos magnetBlock = null;
+
+	// Entity lock
+	private Entity attachedEntity = null;
+	private int attachedEntityId = -1;
 
 	/** Client-side? instantiation. Creates a very basic entity for filling in details later.**/
 	public GrapplinghookEntity(EntityType<? extends GrapplinghookEntity> type, Level world) {
@@ -213,8 +218,18 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	}
 
 	@Override
+	public void lerpTo(double x, double y, double z, float yRot, float xRot, int lerpSteps) {
+		// While tethered to a mob, the client tracks the mob locally in tick().
+		// Ignoring server position sync here prevents ~5Hz jitter from tracker updates
+		// fighting our direct setPos.
+		if (this.attachedEntity != null) return;
+		super.lerpTo(x, y, z, yRot, xRot, lerpSteps);
+	}
+
+	@Override
 	protected double getDefaultGravity() {
-		if (this.isAttachedToSurface)
+		GrappleMod.LOGGER.warn(String.format("Attached to an entity: %d", (this.getAttachedEntity() == null ? -1 : getAttachedEntity().getId())));
+		if (this.isAttachedToAnything())
 			return 0.0F;
 
 		return this.customization.get(HOOK_GRAVITY_MULTIPLIER.get()).floatValue() * 0.1F;
@@ -253,6 +268,13 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			super.setPos(this.thisPos.x, this.thisPos.y, this.thisPos.z);
 		}
 
+		if (this.attachedEntityId != -1) {
+			Entity e = this.level().getEntity(this.attachedEntityId);
+			if (e != null) {
+				this.attachedEntity = e;
+			}
+		}
+
 		if (this.isAttachedToSurface) {
 			this.setDeltaMovement(0, 0, 0);
 		}
@@ -271,13 +293,38 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			return;
 		}
 
+		if (this.attachedEntity != null) {
+			if (!this.attachedEntity.isAlive()) {
+				GrappleMod.LOGGER.warn("Attached entity has perished ...");
+				if (!this.level().isClientSide && this.shootingEntityID != 0) {
+					GrappleModUtils.sendToCorrectClient(
+							new GrappleDetachS2CPayload(this.shootingEntityID),
+							this.shootingEntityID,
+							this.level()
+					);
+				}
+				this.removeServer();
+				return;
+			}
+
+			Vec target = Vec.positionVec(this.attachedEntity)
+					.add(new Vec(0, this.attachedEntity.getBbHeight() * 0.5, 0));
+
+			this.setPos(target.x, target.y, target.z);
+			this.setDeltaMovement(this.attachedEntity.getDeltaMovement());
+		}
+
 		boolean hookIsDetached = !this.level().isClientSide &&
 				                  this.shootingEntity != null &&
-				                 !this.isAttachedToSurface;
+				                 !this.isAttachedToAnything();
 
 		if(!hookIsDetached) return;
 
 		this.handleHookPhysics();
+	}
+
+	public boolean isAttachedToAnything() {
+		return this.isAttachedToSurface || this.attachedEntity != null;
 	}
 
 	@Override
@@ -338,24 +385,35 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		}
 
 		if (hit instanceof EntityHitResult entityHit) {
-			// hit entity
 			Entity entity = entityHit.getEntity();
+
 			if (entity == this.shootingEntity) {
 				return;
 			}
 
-			Vec playerpos = Vec.positionVec(this.shootingEntity);
-			Vec entitypos = Vec.positionVec(entity);
-			Vec yank = playerpos.sub(entitypos).scale(0.4);
-			yank.y = Math.min(yank.y, 2);
-			Vec newmotion = Vec.motionVec(entity).add(yank);
-			entity.setDeltaMovement(newmotion.toVec3d());
+			// Respect config toggle
+			if (!GrappleModCommonConfig.get().doHooksAffectEntities()) {
+				this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), Vec.positionVec(this), Vec.positionVec(this).add(Vec.motionVec(this))));
+				return;
+			}
 
-			this.removeServer();
+			// Set entity state before serverAttach so the outgoing packet carries attachedEntityId.
+			this.attachedEntity = entity;
+			this.attachedEntityId = entity.getId();
+
+			Vec entityPos = Vec.positionVec(entity);
+			Vec attachPos = new Vec(
+					entityPos.x,
+					entityPos.y + entity.getBbHeight() * 0.5,
+					entityPos.z
+			);
+
+			this.serverAttach(null, attachPos, null, true);
+
+			GrappleMod.LOGGER.warn(String.format("Attached to a new entity: %d", this.attachedEntityId));
 
 		} else if (blockhit != null) {
 			BlockPos blockpos = blockhit.getBlockPos();
-
 			Vec vec3 = new Vec(hit.getLocation());
 
 			this.serverAttach(blockpos, vec3, blockhit.getDirection());
@@ -579,10 +637,15 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
         this.thisPos = Vec.positionVec(this);
 		this.isFirstAttach = true;
 
+		GrappleAttachS2CPayload.GrappleAttachTarget attachTarget = this.attachedEntity != null
+				? new GrappleAttachS2CPayload.GrappleAttachTarget.Entity(this.attachedEntityId)
+				: new GrappleAttachS2CPayload.GrappleAttachTarget.Block(blockpos);
+
 		GrappleAttachS2CPayload shootPacket = new GrappleAttachS2CPayload(
 				this.getId(),
 				this.position().toVector3f(),
-				this.shootingEntityID, blockpos,
+				this.shootingEntityID,
+				attachTarget,
 				new RopeSnapshot(this.segmentHandler),
 				this.customization
 		);
@@ -733,5 +796,18 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	public Direction getLastBlockCollisionSide() {
 		return this.lastBlockCollisionSide;
+	}
+
+	public Entity getAttachedEntity() { return this.attachedEntity; }
+
+	public int getAttachedEntityId() { return this.attachedEntityId; }
+
+	public void setAttachedEntityIdClient(int id) {
+		this.attachedEntityId = id;
+	}
+
+	public void setAttachedEntityClient(Entity entity) {
+		this.attachedEntity = entity;
+		this.attachedEntityId = entity != null ? entity.getId() : -1;
 	}
 }

@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.client.physics.context;
 
 import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
+import com.yyon.grapplinghook.config.GrapplePropertyConfigLoader;
 import com.yyon.grapplinghook.content.physics.PhysicsControllers;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;
 import com.yyon.grapplinghook.util.EnchantmentValues;
@@ -182,7 +183,9 @@ public class AirFrictionPhysicsController extends GrapplingHookPhysicsController
 			this.disable();
 		}
 
-		Vec gravity = new Vec(0, -0.10, 0);
+		double g = GrapplePropertyConfigLoader.CONFIG.grappleGravity;
+		Vec gravity = new Vec(0, -g, 0);
+//		Vec gravity = new Vec(0, -0.10, 0);
 
 		if (!wallrun)
 			this.motion.mutableAdd(gravity);

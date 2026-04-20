@@ -41,7 +41,41 @@ import java.util.LinkedList;
     along with GrappleMod.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId, BlockPos hookedBlock, RopeSnapshot ropeState, HookCustomization customization) implements S2CPayload {
+
+
+public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId, GrappleAttachTarget attachTarget, RopeSnapshot ropeState, HookCustomization customization) implements S2CPayload {
+
+    public sealed interface GrappleAttachTarget permits GrappleAttachTarget.Block, GrappleAttachTarget.Entity {
+        byte TAG_BLOCK = 0;
+        byte TAG_ENTITY = 1;
+
+        StreamCodec<RegistryFriendlyByteBuf, GrappleAttachTarget> STREAM_CODEC = new StreamCodec<>() {
+            @Override
+            public GrappleAttachTarget decode(RegistryFriendlyByteBuf buf) {
+                byte tag = buf.readByte();
+                return switch (tag) {
+                    case TAG_BLOCK -> new Block(BlockPos.STREAM_CODEC.decode(buf));
+                    case TAG_ENTITY -> new Entity(buf.readVarInt());
+                    default -> throw new IllegalStateException("Unknown GrappleAttachTarget tag: " + tag);
+                };
+            }
+
+            @Override
+            public void encode(RegistryFriendlyByteBuf buf, GrappleAttachTarget value) {
+                if (value instanceof Block b) {
+                    buf.writeByte(TAG_BLOCK);
+                    BlockPos.STREAM_CODEC.encode(buf, b.pos());
+                } else if (value instanceof Entity e) {
+                    buf.writeByte(TAG_ENTITY);
+                    buf.writeVarInt(e.id());
+                }
+            }
+        };
+
+        record Block(BlockPos pos) implements GrappleAttachTarget {}
+        record Entity(int id) implements GrappleAttachTarget {}
+    }
+
     public static final ResourceLocation IDENTIFIER = GrappleMod.id("grapple_attach");
     public static final CustomPacketPayload.Type<GrappleAttachS2CPayload> PAYLOAD_TYPE = new Type<>(IDENTIFIER);
 
@@ -52,8 +86,8 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
             GrappleAttachS2CPayload::hookPos,
             ByteBufCodecs.INT,
             GrappleAttachS2CPayload::holderId,
-            BlockPos.STREAM_CODEC,
-            GrappleAttachS2CPayload::hookedBlock,
+            GrappleAttachTarget.STREAM_CODEC,
+            GrappleAttachS2CPayload::attachTarget,
             RopeSnapshot.STREAM_CODEC,
             GrappleAttachS2CPayload::ropeState,
             HookCustomization.STREAM_CODEC,
@@ -88,6 +122,20 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
             if (e instanceof GrapplinghookEntity grapple) {
 
                 grapple.clientAttach(this.hookPos);
+
+                BlockPos hookedBlock = null;
+                switch (this.attachTarget) {
+                    case GrappleAttachTarget.Block b -> hookedBlock = b.pos();
+                    case GrappleAttachTarget.Entity ent -> {
+                        grapple.setAttachedEntityIdClient(ent.id());
+                        Entity attached = world.getEntity(ent.id());
+                        if (attached != null) {
+                            grapple.setAttachedEntityClient(attached);
+                        }
+                        GrappleMod.LOGGER.info("Client attach entity id: {}", ent.id());
+                    }
+                }
+
                 RopeSegmentHandler segmentHandler = grapple.getSegmentHandler();
                 segmentHandler.segments = new LinkedList<>(this.ropeState.getSegments());
                 segmentHandler.segmentTopSides = new LinkedList<>(this.ropeState.getTopSides());
@@ -103,7 +151,7 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
                 segmentHandler.forceSetPos(new Vec(this.hookPos), Vec.positionVec(holder));
                 GrappleModClient.get()
                         .getClientControllerManager()
-                        .createControl(PhysicsControllers.GRAPPLING_HOOK, this.hookId(), this.holderId(), world, this.hookedBlock, this.customization);
+                        .createControl(PhysicsControllers.GRAPPLING_HOOK, this.hookId(), this.holderId(), world, hookedBlock, this.customization);
             }
         });
     }

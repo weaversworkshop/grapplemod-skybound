@@ -35,7 +35,7 @@ public class HookOverviewView extends AbstractBlueprintView {
     }
 
     @Override
-    public void create() {
+    public int create() {
         this.layout.rowSpacing(4);
         this.layout.columnSpacing(6);
         this.layout.newCellSettings().alignVerticallyTop().alignHorizontallyCenter();
@@ -60,7 +60,8 @@ public class HookOverviewView extends AbstractBlueprintView {
         this.layout.arrangeElements();
         this.layout.visitWidgets(this::addWidget);
 
-        GrappleMod.LOGGER.info("HookOverviewView Widgets: {}", this.getWidgets().toArray());
+//        GrappleMod.LOGGER.info("HookOverviewView Widgets: {}", this.getWidgets());
+        return 0;
     }
 
     @Override
@@ -85,9 +86,6 @@ public class HookOverviewView extends AbstractBlueprintView {
         };
     }
 
-
-
-    @Override
     public int getContentsHeight() {
         return this.layout.getHeight();
     }

@@ -43,8 +43,7 @@ public class ModificationTableMenuScreen extends AbstractContainerScreen<Modific
         this.inventoryLabelY = ModificationTableMenu.INVENTORY_TOP_LEFT.y() - (this.font.lineHeight + 3);
 
         this.blueprintViewHolder = new ScrollableViewHolder<>(
-                this::addRenderableWidget,
-                this::removeWidget,
+                this.minecraft,
                 this.leftPos + ModificationTableMenu.BLUEPRINT_SCROLLABLE_TOP_LEFT.x(),
                 this.topPos + ModificationTableMenu.BLUEPRINT_SCROLLABLE_TOP_LEFT.y(),
                 ModificationTableMenu.BLUEPRINT_SCROLLABLE_SIZE.x(),

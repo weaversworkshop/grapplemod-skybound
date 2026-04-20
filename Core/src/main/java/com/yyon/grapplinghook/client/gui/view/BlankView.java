@@ -7,14 +7,14 @@ import java.util.List;
 public class BlankView extends SwitchableScreenView {
 
     @Override
-    public void create() {
+    public int create() {
+        return 0;
     }
 
     @Override
     public void destroy(List<AbstractWidget> widgets) {
     }
 
-    @Override
     public int getContentsHeight() {
         return 0;
     }

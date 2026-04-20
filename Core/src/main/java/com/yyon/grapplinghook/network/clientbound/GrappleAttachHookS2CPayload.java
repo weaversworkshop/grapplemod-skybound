@@ -70,6 +70,10 @@ public record GrappleAttachHookS2CPayload(int hookId, Vector3f attachPos) implem
             }
 
             if (e instanceof GrapplinghookEntity grapple) {
+                if (grapple.getAttachedEntityId() != -1) {
+                    return;
+                }
+
                 grapple.setAttachPos(this.attachPos);
             }
         });

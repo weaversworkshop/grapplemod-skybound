@@ -13,8 +13,8 @@ public class CategoryLockedView extends AbstractBlueprintView {
     }
 
     @Override
-    public void create() {
-
+    public int create() {
+        return 0;
     }
 
     @Override
@@ -22,7 +22,6 @@ public class CategoryLockedView extends AbstractBlueprintView {
 
     }
 
-    @Override
     public int getContentsHeight() {
         return 0;
     }

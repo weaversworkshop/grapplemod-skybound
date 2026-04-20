@@ -5,6 +5,7 @@ import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.client.ModKeys;
 import com.yyon.grapplinghook.config.GrappleModClientConfig;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
+import com.yyon.grapplinghook.config.GrapplePropertyConfigLoader;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
 import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
 import com.yyon.grapplinghook.content.physics.PhysicsControllers;
@@ -267,7 +268,9 @@ public class GrapplingHookPhysicsController {
 
 		Vec playerPos = Vec.positionVec(entity).add(new Vec(0, entity.getEyeHeight(), 0));
 		Vec additionalMotion = new Vec(0,0,0);
-		Vec gravity = new Vec(0, -0.05, 0);
+
+		double g = GrapplePropertyConfigLoader.CONFIG.grappleGravity;
+		Vec gravity = new Vec(0, -g, 0);
 
 		this.motion.mutableAdd(gravity);
 
@@ -832,9 +835,31 @@ public class GrapplingHookPhysicsController {
 	}
 
 	public void limitVelocity() {
-		if (this.motion.length() > 1.0f) { // 1 block a tick is *fast*
-			this.motion.mutableSetMagnitude(1.0f);
+//		final double MAX_MOTION = GrapplePropertyConfigLoader.CONFIG.maxAirspeed;
+//		if (MAX_MOTION > 0 && this.motion.length() > MAX_MOTION) {
+//			GrappleMod.LOGGER.warn(String.format("Speed limited to %f from %f", MAX_MOTION, this.motion.length()));
+//			this.motion.mutableSetMagnitude(MAX_MOTION);
+//		} else {
+//			GrappleMod.LOGGER.warn(String.format("Speed unlimited as %f", this.motion.length()));
+//		}
+
+		final double MAX_VERTICAL = GrapplePropertyConfigLoader.CONFIG.maxVerticalAirspeed;
+		final double MAX_HORIZONTAL = GrapplePropertyConfigLoader.CONFIG.maxHorizontalAirspeed;
+
+		Vec horizontal = motion.removeAlong(new Vec(0, 1, 0));
+		double vertical = motion.y;
+
+		if (MAX_HORIZONTAL > 0 && horizontal.length() > MAX_HORIZONTAL) {
+			horizontal.mutableSetMagnitude(MAX_HORIZONTAL);
 		}
+
+		if (MAX_VERTICAL > 0 && vertical > MAX_VERTICAL) {
+			vertical = MAX_VERTICAL;
+		}
+
+		motion.x = horizontal.x;
+		motion.y = vertical;
+		motion.z = horizontal.z;
 	}
 	
 	// Vector stuff:

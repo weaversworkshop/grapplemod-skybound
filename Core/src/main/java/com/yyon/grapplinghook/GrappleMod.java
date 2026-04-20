@@ -1,5 +1,6 @@
 package com.yyon.grapplinghook;
 
+import com.yyon.grapplinghook.config.GrapplePropertyConfigLoader;
 import com.yyon.grapplinghook.content.command.GrappleModCommand;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.config.ServerFeatures;
@@ -112,6 +113,7 @@ public class GrappleMod implements ModInitializer {
     }
 
     private void initConfig() {
+        GrapplePropertyConfigLoader.load();
         GrappleModCommonConfig.HANDLER.defaults().saveDefaults();
         GrappleModCommonConfig.HANDLER.load();
 
