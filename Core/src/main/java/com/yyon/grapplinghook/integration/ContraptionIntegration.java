@@ -1,5 +1,6 @@
 package com.yyon.grapplinghook.integration;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.EntityHitResult;
@@ -53,4 +54,14 @@ public interface ContraptionIntegration {
 
     /** Contraption-local point → world-space, incorporating current rotation + translation. */
     Vec3 localToWorld(Entity contraption, Vec3 localPoint, float partialTicks);
+
+    /**
+     * Check whether {@code worldPos} is one of the blocks that this contraption captured
+     * during assembly. Used to migrate hooks anchored to a static block onto the
+     * contraption that just absorbed it.
+     *
+     * @return the block's key in the contraption's local block map, or {@code null}
+     *         if the contraption does not contain that block.
+     */
+    @Nullable BlockPos getCapturedLocalPos(Entity contraption, BlockPos worldPos);
 }

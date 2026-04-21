@@ -13,6 +13,9 @@ import com.yyon.grapplinghook.network.NetworkManager;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachHookS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
+import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToEntityS2CPayload;
+import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToBlockS2CPayload;
+import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
 import com.yyon.grapplinghook.physics.io.HookSnapshot;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import com.yyon.grapplinghook.util.GrappleModUtils;
@@ -125,6 +128,14 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	 * instead of plain center-follow.
 	 */
 	private Vec3 attachedContraptionLocalOffset = null;
+	/**
+	 * Contraption-local key of the block the hook is anchored to. Stored alongside
+	 * {@link #attachedContraptionLocalOffset} so that on disassembly we can locate the block
+	 * in world-space without the rounding ambiguity of picking a cell from a face-boundary
+	 * hit point. {@code null} if the hook was attached mid-flight to an already-moving
+	 * contraption, where the captured block key isn't known.
+	 */
+	private BlockPos attachedContraptionLocalBlockPos = null;
 
 	/** Client-side? instantiation. Creates a very basic entity for filling in details later.**/
 	public GrapplinghookEntity(EntityType<? extends GrapplinghookEntity> type, Level world) {
@@ -245,7 +256,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	@Override
 	protected double getDefaultGravity() {
-		GrappleMod.LOGGER.warn(String.format("Attached to an entity: %d", (this.getAttachedEntity() == null ? -1 : getAttachedEntity().getId())));
 		if (this.isAttachedToAnything())
 			return 0.0F;
 
@@ -306,22 +316,9 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			@Nullable EntityHitResult contraptionHit = GrappleModIntegrations
 					.getContraptionIntegration()
 					.findContraptionAlongRay(this.level(), rayStart, rayEnd);
-			// TEMP DIAGNOSTIC — confirms pre-scan fires every tick and whether it detects a contraption.
-			org.slf4j.LoggerFactory.getLogger("GrappleBroadPhase").info(
-					"tick pre-scan: hookPos={}, motion={}, contraptionFound={}",
-					rayStart,
-					this.getDeltaMovement(),
-					contraptionHit == null ? "NONE" : ("entity=" + contraptionHit.getEntity().getId())
-			);
 			if (contraptionHit != null) {
 				this.onHit(contraptionHit);
 			}
-		} else if (!this.level().isClientSide) {
-			// Log when we SKIP the pre-scan so we can see why raycastContraption isn't firing.
-			org.slf4j.LoggerFactory.getLogger("GrappleBroadPhase").info(
-					"tick pre-scan SKIPPED: attached={}",
-					this.isAttachedToSurface
-			);
 		}
 
 		super.tick();
@@ -747,6 +744,179 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		NetworkManager.packetToClient(msg, GrappleModUtils.getPlayersThatCanSeeChunkAt((ServerLevel) this.level(), new Vec(this.position())));
 
 		GrappleModServerEvents.HOOK_ATTACH.invoker().onHookAttach(this.shootingEntity, this);
+	}
+
+	/**
+	 * Switch this hook's anchor from a static block to a moving contraption that just absorbed
+	 * that block. Preserves the original sub-block hit point as a contraption-local offset so
+	 * the rope's visual anchor doesn't snap to the block's center on conversion.
+	 *
+	 * <p>Server-only. Sends a {@link GrappleReanchorToEntityS2CPayload} (not a full
+	 * {@link GrappleAttachS2CPayload}) so the client's existing physics controller is
+	 * left intact — a full re-attach would disable the old controller, which would fire
+	 * {@code HaltCustomPhysicsC2SPayload} back and destroy the hook we just reanchored.</p>
+	 */
+	public void reattachToContraption(Entity contraption, Vec3 localOffset, @Nullable BlockPos localBlockPos) {
+		if (this.level().isClientSide) return;
+		if (!this.isAttachedToSurface) return;
+
+		this.attachedEntity = contraption;
+		this.attachedEntityId = contraption.getId();
+		this.attachedContraptionLocalOffset = localOffset;
+		this.attachedContraptionLocalBlockPos = localBlockPos;
+		this.lastBlockCollision = null;
+		this.lastBlockCollisionSide = null;
+		this.lastSubCollisionPos = null;
+
+		// Intentionally a lightweight reanchor packet rather than a full GrappleAttachS2CPayload:
+		// the full payload rebuilds the client-side physics controller, whose disable() path
+		// fires HaltCustomPhysicsC2SPayload back to the server and kills this hook.
+		GrappleReanchorToEntityS2CPayload packet = new GrappleReanchorToEntityS2CPayload(
+				this.getId(), this.attachedEntityId, localOffset);
+
+		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
+	}
+
+	/**
+	 * Called by contraption-integration compat modules when a contraption has just assembled.
+	 * Migrates any active hook anchored to a block that the contraption captured onto the
+	 * contraption itself, preserving sub-block hit precision.
+	 */
+	public static void onContraptionAssembled(Entity contraptionEntity) {
+		ContraptionIntegration ci = GrappleModIntegrations.getContraptionIntegration();
+		if (ci == null || !ci.isContraption(contraptionEntity)) return;
+
+		Level contraptionLevel = contraptionEntity.level();
+		if (contraptionLevel.isClientSide) return;
+
+		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
+			if (hook == null || !hook.isAlive()) continue;
+			if (hook.level() != contraptionLevel) continue;
+			if (!hook.isAttachedToSurface) continue;
+			if (hook.lastBlockCollision == null) continue;
+			if (hook.attachedEntity != null) continue;
+
+			BlockPos localKey = ci.getCapturedLocalPos(contraptionEntity, hook.lastBlockCollision);
+			if (localKey == null) continue;
+
+			Vec3 worldHit = hook.lastSubCollisionPos != null
+					? hook.lastSubCollisionPos.toVec3d()
+					: Vec3.atCenterOf(hook.lastBlockCollision);
+			Vec3 localOffset = ci.worldToLocal(contraptionEntity, worldHit, CONTRAPTION_PARTIAL_TICKS);
+
+			hook.reattachToContraption(contraptionEntity, localOffset, localKey);
+		}
+	}
+
+	/**
+	 * Maximum distance (in blocks) between the hook's world position and the nearest face of
+	 * the candidate block for a disassembly-time block re-anchor to be considered "this is
+	 * still visually the same anchor." Beyond this, the disassembly moved geometry enough
+	 * that a silent re-anchor would look like a teleport, so we detach instead.
+	 */
+	private static final double DISASSEMBLY_REANCHOR_MAX_DIST = 1.47;
+
+	/**
+	 * Called by contraption-integration compat modules when a contraption is about to be
+	 * removed because of disassembly (blocks being placed back into the world). For each
+	 * hook anchored to this contraption, attempts a precise re-anchor to the block that
+	 * just landed under it; if no suitable block is nearby, detaches the hook cleanly.
+	 */
+	public static void onContraptionDisassembled(Entity contraptionEntity) {
+		ContraptionIntegration ci = GrappleModIntegrations.getContraptionIntegration();
+		if (ci == null || !ci.isContraption(contraptionEntity)) return;
+
+		Level level = contraptionEntity.level();
+		if (level.isClientSide) return;
+
+		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
+			if (hook == null || !hook.isAlive()) continue;
+			if (hook.level() != level) continue;
+			if (hook.attachedEntity != contraptionEntity) continue;
+
+			BlockPos localBlock = hook.attachedContraptionLocalBlockPos;
+			if (localBlock == null) {
+				hook.detachFromContraption();
+				continue;
+			}
+
+			Vec3 localCenter = new Vec3(localBlock.getX() + 0.5, localBlock.getY() + 0.5, localBlock.getZ() + 0.5);
+			Vec3 worldCenter = ci.localToWorld(contraptionEntity, localCenter, CONTRAPTION_PARTIAL_TICKS);
+			BlockPos candidate = BlockPos.containing(worldCenter);
+
+			BlockState state = level.getBlockState(candidate);
+			Vec3 hookPos = hook.position();
+			double dist = distancePointToAabb(hookPos, new AABB(candidate));
+
+			if (state.isAir() || dist > DISASSEMBLY_REANCHOR_MAX_DIST) {
+				hook.detachFromContraption();
+				continue;
+			}
+
+			hook.reattachToBlock(candidate, hookPos);
+		}
+	}
+
+	private static double distancePointToAabb(Vec3 p, AABB box) {
+		double dx = Math.max(Math.max(box.minX - p.x, 0), p.x - box.maxX);
+		double dy = Math.max(Math.max(box.minY - p.y, 0), p.y - box.maxY);
+		double dz = Math.max(Math.max(box.minZ - p.z, 0), p.z - box.maxZ);
+		return Math.sqrt(dx * dx + dy * dy + dz * dz);
+	}
+
+	/**
+	 * Inverse of {@link #reattachToContraption}: switch a contraption-anchored hook onto a
+	 * static block at {@code blockPos}. The hook's world position is pinned to {@code hookWorldPos}
+	 * (the last known contraption-tracked position) so the visual anchor doesn't jump.
+	 */
+	public void reattachToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
+		if (this.level().isClientSide) return;
+
+		this.attachedEntity = null;
+		this.attachedEntityId = -1;
+		this.attachedContraptionLocalOffset = null;
+		this.attachedContraptionLocalBlockPos = null;
+
+		this.lastBlockCollision = blockPos;
+		this.lastSubCollisionPos = new Vec(hookWorldPos);
+		this.lastBlockCollisionSide = null;
+		this.isAttachedToSurface = true;
+
+		this.setPosRaw(hookWorldPos.x, hookWorldPos.y, hookWorldPos.z);
+		this.setDeltaMovement(0, 0, 0);
+		this.thisPos = new Vec(hookWorldPos);
+
+		GrappleReanchorToBlockS2CPayload packet = new GrappleReanchorToBlockS2CPayload(
+				this.getId(), blockPos, hookWorldPos);
+		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
+	}
+
+	/**
+	 * Tell the shooter's client to detach this hook and clean up server state.
+	 * Used when a contraption our hook was following disassembles without a suitable
+	 * block underneath.
+	 */
+	public void detachFromContraption() {
+		if (this.level().isClientSide) return;
+		if (this.shootingEntityID != 0) {
+			GrappleModUtils.sendToCorrectClient(
+					new GrappleDetachS2CPayload(this.shootingEntityID),
+					this.shootingEntityID,
+					this.level()
+			);
+		}
+		this.removeServer();
+	}
+
+	/** Client-side mirror of {@link #reattachToBlock}. Updates entity state without touching the controller. */
+	public void clientReanchorToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
+		this.attachedEntity = null;
+		this.attachedEntityId = -1;
+		this.attachedContraptionLocalOffset = null;
+		this.attachedContraptionLocalBlockPos = null;
+		this.setPosRaw(hookWorldPos.x, hookWorldPos.y, hookWorldPos.z);
+		this.setDeltaMovement(0, 0, 0);
+		this.thisPos = new Vec(hookWorldPos);
 	}
 
 	public void clientAttach(Vector3f attachPos) {

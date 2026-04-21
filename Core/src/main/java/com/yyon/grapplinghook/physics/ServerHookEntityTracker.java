@@ -176,6 +176,15 @@ public class ServerHookEntityTracker {
 				: new HashSet<>();
 	}
 
+	/** Snapshot of every tracked hook across all owners. Snapshot, not a live view, so callers can mutate. */
+	public static List<GrapplinghookEntity> getAllTrackedHooks() {
+		List<GrapplinghookEntity> all = new ArrayList<>();
+		for (HashSet<GrapplinghookEntity> bucket : allGrapplehookEntities.values()) {
+			all.addAll(bucket);
+		}
+		return all;
+	}
+
 	public static boolean isAttachedToHooks(Entity ownerEntity) {
 		ServerHookEntityTracker.checkOwnerIsNotHookElseWarn(ownerEntity);
 		return ServerHookEntityTracker.isAttachedToHooks(ownerEntity.getId());

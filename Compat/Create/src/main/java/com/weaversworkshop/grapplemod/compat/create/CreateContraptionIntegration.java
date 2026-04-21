@@ -126,7 +126,6 @@ public class CreateContraptionIntegration implements ContraptionIntegration {
 
         Vec3 closestHitWorld = null;
         double closestDistSq = Double.MAX_VALUE;
-        double minObservedDistSq = Double.MAX_VALUE;  // diagnostic: closest block we saw, hit or not
 
         // World-space approach: for each block, compute its current world-space position
         // via toGlobalVector and test the ray against that. Inverts the usual "transform
@@ -153,10 +152,6 @@ public class CreateContraptionIntegration implements ContraptionIntegration {
                         worldCenter.x + 0.5, worldCenter.y + 0.5, worldCenter.z + 0.5
                 ).inflate(HIT_MARGIN);
 
-                // Diagnostic: track perpendicular distance from block center to ray line.
-                double dForLog = distanceSqFromPointToSegment(worldCenter, rayStart, rayEnd);
-                if (dForLog < minObservedDistSq) minObservedDistSq = dForLog;
-
                 Vec3 hitPoint;
                 if (hitBox.contains(rayStart)) {
                     hitPoint = rayStart;
@@ -174,26 +169,7 @@ public class CreateContraptionIntegration implements ContraptionIntegration {
             }
         }
 
-        // Log hits only (misses are spammy and we now understand why they happen).
-        if (closestHitWorld != null) {
-            org.slf4j.LoggerFactory.getLogger("GrappleCreateDiag").info(
-                    "raycastContraption HIT: blocks={}, samples={}, closestBlockCenterDist={}, hit={}",
-                    blocks.size(), ROTATION_SAMPLES,
-                    Math.sqrt(minObservedDistSq), closestHitWorld
-            );
-        }
-
         return closestHitWorld;
-    }
-
-    /** Squared perpendicular distance from point p to the segment start→end. */
-    private static double distanceSqFromPointToSegment(Vec3 p, Vec3 start, Vec3 end) {
-        Vec3 dir = end.subtract(start);
-        double lenSq = dir.lengthSqr();
-        if (lenSq < 1.0E-9) return p.distanceToSqr(start);
-        double t = Math.max(0.0, Math.min(1.0, p.subtract(start).dot(dir) / lenSq));
-        Vec3 closest = start.add(dir.scale(t));
-        return p.distanceToSqr(closest);
     }
 
     @Override
@@ -206,5 +182,14 @@ public class CreateContraptionIntegration implements ContraptionIntegration {
     public Vec3 localToWorld(Entity entity, Vec3 localPoint, float partialTicks) {
         if (!(entity instanceof AbstractContraptionEntity c)) return localPoint;
         return c.toGlobalVector(localPoint, partialTicks);
+    }
+
+    @Override
+    public @Nullable BlockPos getCapturedLocalPos(Entity entity, BlockPos worldPos) {
+        if (!(entity instanceof AbstractContraptionEntity ce)) return null;
+        Contraption c = ce.getContraption();
+        if (c == null) return null;
+        BlockPos local = worldPos.subtract(c.anchor);
+        return c.getBlocks().containsKey(local) ? local : null;
     }
 }

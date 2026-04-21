@@ -11,6 +11,8 @@ import com.yyon.grapplinghook.network.clientbound.AddExtraEntityDataS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.DetachSingleHookS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachHookS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachS2CPayload;
+import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToEntityS2CPayload;
+import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToBlockS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.RestoreGrappleStateS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.RopeSegmentUpdateS2CPayload;
@@ -46,6 +48,8 @@ public final class ClientNetworkReceivers {
         ClientPlayNetworking.registerGlobalReceiver(AddExtraEntityDataS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleAddExtraEntityData);
         ClientPlayNetworking.registerGlobalReceiver(DetachSingleHookS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleDetachSingleHook);
         ClientPlayNetworking.registerGlobalReceiver(GrappleAttachS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleAttach);
+        ClientPlayNetworking.registerGlobalReceiver(GrappleReanchorToEntityS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleReanchor);
+        ClientPlayNetworking.registerGlobalReceiver(GrappleReanchorToBlockS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleReanchorToBlock);
         ClientPlayNetworking.registerGlobalReceiver(GrappleDetachS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleDetach);
         ClientPlayNetworking.registerGlobalReceiver(GrappleAttachHookS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleAttachHook);
         ClientPlayNetworking.registerGlobalReceiver(RestoreGrappleStateS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleRestoreGrappleState);
@@ -126,6 +130,41 @@ public final class ClientNetworkReceivers {
         GrappleModCommonConfig.syncIncomingFromServer(payload.config());
     }
 
+    private static void handleGrappleReanchor(GrappleReanchorToEntityS2CPayload payload, ClientPlayNetworking.Context ctx) {
+        ctx.client().execute(() -> {
+            Level world = Minecraft.getInstance().level;
+            if (world == null) return;
+
+            Entity e = world.getEntity(payload.hookId());
+            if (!(e instanceof GrapplinghookEntity grapple)) {
+                GrappleMod.LOGGER.warn("GrappleReanchor received for missing hook {}", payload.hookId());
+                return;
+            }
+
+            Entity newAnchor = world.getEntity(payload.newEntityId());
+            grapple.setAttachedEntityIdClient(payload.newEntityId());
+            if (newAnchor != null) {
+                grapple.setAttachedEntityClient(newAnchor);
+            }
+            grapple.setAttachedContraptionLocalOffset(payload.localOffset());
+        });
+    }
+
+    private static void handleGrappleReanchorToBlock(GrappleReanchorToBlockS2CPayload payload, ClientPlayNetworking.Context ctx) {
+        ctx.client().execute(() -> {
+            Level world = Minecraft.getInstance().level;
+            if (world == null) return;
+
+            Entity e = world.getEntity(payload.hookId());
+            if (!(e instanceof GrapplinghookEntity grapple)) {
+                GrappleMod.LOGGER.warn("GrappleReanchorToBlock received for missing hook {}", payload.hookId());
+                return;
+            }
+
+            grapple.clientReanchorToBlock(payload.blockPos(), payload.hookWorldPos());
+        });
+    }
+
     private static void handleGrappleAttach(GrappleAttachS2CPayload payload, ClientPlayNetworking.Context ctx) {
         ctx.client().execute(() -> {
             Level world = Minecraft.getInstance().level;
@@ -155,7 +194,6 @@ public final class ClientNetworkReceivers {
                         if (attached != null) {
                             grapple.setAttachedEntityClient(attached);
                         }
-                        GrappleMod.LOGGER.info("Client attach entity id: {}", ent.id());
                     }
                     case GrappleAttachS2CPayload.GrappleAttachTarget.EntityOffset eo -> {
                         grapple.setAttachedEntityIdClient(eo.id());
@@ -164,7 +202,6 @@ public final class ClientNetworkReceivers {
                             grapple.setAttachedEntityClient(attached);
                         }
                         grapple.setAttachedContraptionLocalOffset(eo.localOffset());
-                        GrappleMod.LOGGER.info("Client attach contraption id: {} localOffset: {}", eo.id(), eo.localOffset());
                     }
                 }
 

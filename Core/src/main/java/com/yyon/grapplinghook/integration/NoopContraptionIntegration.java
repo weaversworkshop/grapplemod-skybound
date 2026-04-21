@@ -1,5 +1,6 @@
 package com.yyon.grapplinghook.integration;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.EntityHitResult;
@@ -35,5 +36,10 @@ public final class NoopContraptionIntegration implements ContraptionIntegration 
     @Override
     public Vec3 localToWorld(Entity contraption, Vec3 localPoint, float partialTicks) {
         return localPoint;
+    }
+
+    @Override
+    public @Nullable BlockPos getCapturedLocalPos(Entity contraption, BlockPos worldPos) {
+        return null;
     }
 }

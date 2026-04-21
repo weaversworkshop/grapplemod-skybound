@@ -44,6 +44,8 @@ public class NetworkManager {
         registerS2CPacket(AddExtraEntityDataS2CPayload.PAYLOAD_TYPE, AddExtraEntityDataS2CPayload.STREAM_CODEC);
         registerS2CPacket(DetachSingleHookS2CPayload.PAYLOAD_TYPE, DetachSingleHookS2CPayload.STREAM_CODEC);
         registerS2CPacket(GrappleAttachS2CPayload.PAYLOAD_TYPE, GrappleAttachS2CPayload.STREAM_CODEC);
+        registerS2CPacket(GrappleReanchorToEntityS2CPayload.PAYLOAD_TYPE, GrappleReanchorToEntityS2CPayload.STREAM_CODEC);
+        registerS2CPacket(GrappleReanchorToBlockS2CPayload.PAYLOAD_TYPE, GrappleReanchorToBlockS2CPayload.STREAM_CODEC);
         registerS2CPacket(GrappleDetachS2CPayload.PAYLOAD_TYPE, GrappleDetachS2CPayload.STREAM_CODEC);
         registerS2CPacket(GrappleAttachHookS2CPayload.PAYLOAD_TYPE, GrappleAttachHookS2CPayload.STREAM_CODEC);
         registerS2CPacket(RestoreGrappleStateS2CPayload.PAYLOAD_TYPE, RestoreGrappleStateS2CPayload.STREAM_CODEC);
