@@ -17,6 +17,7 @@ import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.RestoreGrappleStateS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.RopeSegmentUpdateS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.SyncServerConfigS2CPayload;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.util.Vec;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
@@ -30,7 +31,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 
-import java.util.LinkedList;
 
 /**
  * Client-side S2C receiver registration and handler bodies.
@@ -99,7 +99,9 @@ public final class ClientNetworkReceivers {
             }
 
             if (e instanceof GrapplinghookEntity grapple) {
-                if (grapple.getAttachedEntityId() != -1) {
+                // Skip if the hook is already following a moving anchor — its position is
+                // driven by the attached entity, overwriting it here would cause a jitter.
+                if (grapple.attachedWorldEntity() != null) {
                     return;
                 }
 
@@ -137,18 +139,14 @@ public final class ClientNetworkReceivers {
             Level world = Minecraft.getInstance().level;
             if (world == null) return;
 
-            Entity e = world.getEntity(payload.hookId());
-            if (!(e instanceof GrapplinghookEntity grapple)) {
-                GrappleMod.LOGGER.warn("GrappleReanchor received for missing hook {}", payload.hookId());
-                return;
-            }
+            GrapplinghookEntity grapple = resolveHookOrWarn(payload.hookId(), world, "GrappleReanchor");
+            if (grapple == null) return;
 
             Entity newAnchor = world.getEntity(payload.newEntityId());
-            grapple.setAttachedEntityIdClient(payload.newEntityId());
-            if (newAnchor != null) {
-                grapple.setAttachedEntityClient(newAnchor);
-            }
-            grapple.setAttachedContraptionLocalOffset(payload.localOffset());
+            HookAttachment next = newAnchor != null
+                    ? new HookAttachment.ContraptionBlock(newAnchor, payload.localOffset(), null)
+                    : HookAttachment.ContraptionBlock.fromId(payload.newEntityId(), payload.localOffset());
+            grapple.setAttachmentClient(next);
         });
     }
 
@@ -157,11 +155,8 @@ public final class ClientNetworkReceivers {
             Level world = Minecraft.getInstance().level;
             if (world == null) return;
 
-            Entity e = world.getEntity(payload.hookId());
-            if (!(e instanceof GrapplinghookEntity grapple)) {
-                GrappleMod.LOGGER.warn("GrappleReanchorToBlock received for missing hook {}", payload.hookId());
-                return;
-            }
+            GrapplinghookEntity grapple = resolveHookOrWarn(payload.hookId(), world, "GrappleReanchorToBlock");
+            if (grapple == null) return;
 
             grapple.clientReanchorToBlock(payload.blockPos(), payload.hookWorldPos());
         });
@@ -176,60 +171,43 @@ public final class ClientNetworkReceivers {
                 return;
             }
 
-            Entity e = world.getEntity(payload.hookId());
+            GrapplinghookEntity grapple = resolveHookOrWarn(payload.hookId(), world, "GrappleAttach");
+            if (grapple == null) return;
 
-            if (e == null) {
-                GrappleMod.LOGGER.warn("GrappleAttachMessage received for a hook that doesn't exist on the client side! (yet?)");
+            grapple.clientAttach(payload.hookPos());
+
+            Vector3f hp = payload.hookPos();
+            HookAttachment next = HookAttachment.fromWireTarget(
+                    payload.attachTarget(), new Vec3(hp.x, hp.y, hp.z), world);
+            grapple.setAttachmentClient(next);
+
+            BlockPos hookedBlock = next instanceof HookAttachment.Block b ? b.pos() : null;
+
+            RopeSegmentHandler segmentHandler = grapple.getSegmentHandler();
+            segmentHandler.loadFromSnapshot(payload.ropeState());
+
+            Entity holder = world.getEntity(payload.holderId());
+            if (holder == null) {
+                GrappleMod.LOGGER.warn("Network Message received in invalid context (Holder does not exist | GrappleAttach)");
                 return;
             }
 
-            if (e instanceof GrapplinghookEntity grapple) {
-
-                grapple.clientAttach(payload.hookPos());
-
-                BlockPos hookedBlock = null;
-                switch (payload.attachTarget()) {
-                    case GrappleAttachS2CPayload.GrappleAttachTarget.Block b -> {
-                        hookedBlock = b.pos();
-                        // Mirror the server's block-attach state client-side so the hook's
-                        // consolidated `attachment` is a Block variant instead of staying null.
-                        Vector3f hp = payload.hookPos();
-                        grapple.setBlockAttachmentClient(b.pos(), new Vec3(hp.x, hp.y, hp.z));
-                    }
-                    case GrappleAttachS2CPayload.GrappleAttachTarget.Entity ent -> {
-                        grapple.setAttachedEntityIdClient(ent.id());
-                        Entity attached = world.getEntity(ent.id());
-                        if (attached != null) {
-                            grapple.setAttachedEntityClient(attached);
-                        }
-                    }
-                    case GrappleAttachS2CPayload.GrappleAttachTarget.EntityOffset eo -> {
-                        grapple.setAttachedEntityIdClient(eo.id());
-                        Entity attached = world.getEntity(eo.id());
-                        if (attached != null) {
-                            grapple.setAttachedEntityClient(attached);
-                        }
-                        grapple.setAttachedContraptionLocalOffset(eo.localOffset());
-                    }
-                }
-
-                RopeSegmentHandler segmentHandler = grapple.getSegmentHandler();
-                segmentHandler.segments = new LinkedList<>(payload.ropeState().getSegments());
-                segmentHandler.segmentTopSides = new LinkedList<>(payload.ropeState().getTopSides());
-                segmentHandler.segmentBottomSides = new LinkedList<>(payload.ropeState().getBottomSides());
-
-                Entity holder = world.getEntity(payload.holderId());
-
-                if (holder == null) {
-                    GrappleMod.LOGGER.warn("Network Message received in invalid context (Holder does not exist | GrappleAttach)");
-                    return;
-                }
-
-                segmentHandler.forceSetPos(new Vec(payload.hookPos()), Vec.positionVec(holder));
-                GrappleModClient.get()
-                        .getClientControllerManager()
-                        .createControl(PhysicsControllers.GRAPPLING_HOOK, payload.hookId(), payload.holderId(), world, hookedBlock, payload.customization());
-            }
+            segmentHandler.forceSetPos(new Vec(payload.hookPos()), Vec.positionVec(holder));
+            GrappleModClient.get()
+                    .getClientControllerManager()
+                    .createControl(PhysicsControllers.GRAPPLING_HOOK, payload.hookId(), payload.holderId(), world, hookedBlock, payload.customization());
         });
+    }
+
+    /**
+     * Resolve a {@link GrapplinghookEntity} by its entity ID on the client, logging a warning
+     * and returning {@code null} if missing or mistyped. Centralizes the repeated
+     * "getEntity / instanceof / warn" pattern across the three attachment receivers.
+     */
+    private static @org.jetbrains.annotations.Nullable GrapplinghookEntity resolveHookOrWarn(int hookId, Level world, String ctx) {
+        Entity e = world.getEntity(hookId);
+        if (e instanceof GrapplinghookEntity grapple) return grapple;
+        GrappleMod.LOGGER.warn("{}: hook {} missing or wrong type on client side (yet?)", ctx, hookId);
+        return null;
     }
 }

@@ -59,9 +59,7 @@ public class RopeSegmentHandler {
 		this.segmentTopSides = new LinkedList<>();
 		this.segmentBottomSides = new LinkedList<>();
 
-		this.segments.addAll(ropeSnapshot.getSegments());
-		this.segmentTopSides.addAll(ropeSnapshot.getTopSides());
-		this.segmentBottomSides.addAll(ropeSnapshot.getBottomSides());
+		this.loadFromSnapshot(ropeSnapshot);
 
 		this.ropeLen = ropeSnapshot.getRopeLength();
 
@@ -69,6 +67,13 @@ public class RopeSegmentHandler {
 		this.hookEntity = hookEntity;
 		this.prevHookPos = Vec.positionVec(hookEntity);
 		this.prevHolderPos = Vec.positionVec(holder);
+	}
+
+	/** Replace the current rope shape with the snapshot's contents. */
+	public void loadFromSnapshot(RopeSnapshot snapshot) {
+		this.segments = new LinkedList<>(snapshot.getSegments());
+		this.segmentTopSides = new LinkedList<>(snapshot.getTopSides());
+		this.segmentBottomSides = new LinkedList<>(snapshot.getBottomSides());
 	}
 
 

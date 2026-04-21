@@ -1,6 +1,7 @@
 package com.yyon.grapplinghook.physics.io;
 
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.util.NBTHelper;
 import com.yyon.grapplinghook.util.Vec;
 import net.minecraft.core.BlockPos;
@@ -39,9 +40,17 @@ public class HookSnapshot {
 
         this.isMainHook = source.isHeldInMainHand();
 
-        this.lastBlockCollision = source.getLastBlockCollision();
-        this.lastBlockCollisionSide = source.getLastBlockCollisionSide();
-        this.lastSubCollisionPos = source.getLastSubCollisionPos();
+        // Only Block attachments survive save/rejoin. Entity/contraption/sublevel attachments
+        // depend on transient entity IDs that won't match after reconnect, so we drop them.
+        if (source.attachment() instanceof HookAttachment.Block block) {
+            this.lastBlockCollision = block.pos();
+            this.lastBlockCollisionSide = block.sideHit();
+            this.lastSubCollisionPos = new Vec(block.subHitPoint());
+        } else {
+            this.lastBlockCollision = null;
+            this.lastBlockCollisionSide = null;
+            this.lastSubCollisionPos = null;
+        }
     }
 
     public HookSnapshot(CompoundTag source) {
@@ -138,6 +147,19 @@ public class HookSnapshot {
 
     public Direction getLastBlockCollisionSide() {
         return this.lastBlockCollisionSide;
+    }
+
+    /**
+     * Reconstruct the sum-type attachment from this snapshot. Only Block attaches are
+     * persisted; entity/contraption attaches are dropped on save, so this returns
+     * {@code null} for snapshots without a stored block.
+     */
+    public @org.jetbrains.annotations.Nullable HookAttachment toAttachment() {
+        if (this.lastBlockCollision == null || this.lastSubCollisionPos == null) return null;
+        return new HookAttachment.Block(
+                this.lastBlockCollision,
+                this.lastSubCollisionPos.toVec3d(),
+                this.lastBlockCollisionSide);
     }
 
     public static boolean isTagValid(CompoundTag tag) {

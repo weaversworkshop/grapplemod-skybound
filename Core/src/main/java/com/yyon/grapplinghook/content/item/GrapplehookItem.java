@@ -607,7 +607,7 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		if (!thrower.isCrouching()) return;
 		if (thrower.level().isClientSide) return;
 
-		Entity attached = hook.getAttachedEntity();
+		Entity attached = hook.attachedWorldEntity();
 		if (!(attached instanceof LivingEntity mob)) return;
 
 		Vec3 mobToPlayer = thrower.position().subtract(mob.position());
