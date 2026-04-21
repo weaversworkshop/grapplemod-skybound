@@ -306,15 +306,22 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			super.setPos(this.thisPos.x, this.thisPos.y, this.thisPos.z);
 		}
 
-		if (this.attachedEntityId != -1) {
-			Entity e = this.level().getEntity(this.attachedEntityId);
-			if (e != null) {
-				this.attachedEntity = e;
-				this.recomputeAttachment();
+		// Re-resolve any cached entity handle on the current attachment.
+		if (this.attachment != null) {
+			HookAttachment refreshed = this.attachment.refreshed(this.level());
+			if (refreshed != this.attachment) {
+				// Push the refreshed entity ref back into the legacy fields so writes in this
+				// step still have a consistent view. Step 6 drops this bridge.
+				if (refreshed instanceof HookAttachment.Entity e && e.entity() != null) {
+					this.attachedEntity = e.entity();
+				} else if (refreshed instanceof HookAttachment.ContraptionBlock cb && cb.entity() != null) {
+					this.attachedEntity = cb.entity();
+				}
+				this.attachment = refreshed;
 			}
 		}
 
-		if (this.isAttachedToSurface) {
+		if (this.attachment != null) {
 			this.setDeltaMovement(0, 0, 0);
 		}
 
@@ -322,7 +329,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		// projectile raycasts filter them out entirely. We do our own AABB scan
 		// against the ray segment for this tick and synthesize an EntityHitResult
 		// so the normal onHit flow handles the attach.
-		if (!this.isAttachedToSurface && !this.level().isClientSide) {
+		if (this.attachment == null && !this.level().isClientSide) {
 			Vec3 rayStart = this.position();
 			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
 			@Nullable EntityHitResult contraptionHit = GrappleModIntegrations
@@ -347,35 +354,40 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			return;
 		}
 
-		if (this.attachedEntity != null) {
-			if (!this.attachedEntity.isAlive()) {
-				GrappleMod.LOGGER.warn("Attached entity has perished ...");
-				if (!this.level().isClientSide && this.shootingEntityID != 0) {
-					GrappleModUtils.sendToCorrectClient(
-							new GrappleDetachS2CPayload(this.shootingEntityID),
-							this.shootingEntityID,
-							this.level()
-					);
+		// Dispatch follow behavior on the attachment variant.
+		switch (this.attachment) {
+			case null -> { /* unattached: no follow */ }
+
+			case HookAttachment.Block ignored -> { /* static block: no follow */ }
+
+			case HookAttachment.Entity entityAttach -> {
+				Entity e = entityAttach.entity();
+				if (e == null || !e.isAlive()) {
+					this.onAttachedEntityPerished();
+					return;
 				}
-				this.removeServer();
-				return;
+				Vec target = Vec.positionVec(e).add(new Vec(0, e.getBbHeight() * 0.5, 0));
+				this.setPos(target.x, target.y, target.z);
+				this.setDeltaMovement(e.getDeltaMovement());
 			}
 
-			Vec target;
-			if (this.attachedContraptionLocalOffset != null) {
-				Vec3 worldPoint = GrappleModIntegrations.getContraptionIntegration().localToWorld(
-						this.attachedEntity,
-						this.attachedContraptionLocalOffset,
-						CONTRAPTION_PARTIAL_TICKS
-				);
-				target = new Vec(worldPoint);
-			} else {
-				target = Vec.positionVec(this.attachedEntity)
-						.add(new Vec(0, this.attachedEntity.getBbHeight() * 0.5, 0));
+			case HookAttachment.ContraptionBlock cb -> {
+				Entity e = cb.entity();
+				if (e == null || !e.isAlive()) {
+					this.onAttachedEntityPerished();
+					return;
+				}
+				Vec3 worldPoint = cb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
+				this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
+				this.setDeltaMovement(e.getDeltaMovement());
 			}
 
-			this.setPos(target.x, target.y, target.z);
-			this.setDeltaMovement(this.attachedEntity.getDeltaMovement());
+			case HookAttachment.SubLevelBlock slb -> {
+				// Filled in by the Sable compat module. Until then, SubLevelBlock should never
+				// appear at runtime — the Sable attach paths don't exist yet.
+				throw new UnsupportedOperationException(
+						"SubLevelBlock follow requires the Sable compat module");
+			}
 		}
 
 		boolean hookIsDetached = !this.level().isClientSide &&
@@ -388,7 +400,20 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	}
 
 	public boolean isAttachedToAnything() {
-		return this.isAttachedToSurface || this.attachedEntity != null;
+		return this.attachment != null;
+	}
+
+	/** Extracted from tick() — handle the "attached entity is gone" branch. */
+	private void onAttachedEntityPerished() {
+		GrappleMod.LOGGER.warn("Attached entity has perished ...");
+		if (!this.level().isClientSide && this.shootingEntityID != 0) {
+			GrappleModUtils.sendToCorrectClient(
+					new GrappleDetachS2CPayload(this.shootingEntityID),
+					this.shootingEntityID,
+					this.level()
+			);
+		}
+		this.removeServer();
 	}
 
 	@Override
@@ -808,17 +833,12 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
 			if (hook == null || !hook.isAlive()) continue;
 			if (hook.level() != contraptionLevel) continue;
-			if (!hook.isAttachedToSurface) continue;
-			if (hook.lastBlockCollision == null) continue;
-			if (hook.attachedEntity != null) continue;
+			if (!(hook.attachment instanceof HookAttachment.Block block)) continue;
 
-			BlockPos localKey = ci.getCapturedLocalPos(contraptionEntity, hook.lastBlockCollision);
+			BlockPos localKey = ci.getCapturedLocalPos(contraptionEntity, block.pos());
 			if (localKey == null) continue;
 
-			Vec3 worldHit = hook.lastSubCollisionPos != null
-					? hook.lastSubCollisionPos.toVec3d()
-					: Vec3.atCenterOf(hook.lastBlockCollision);
-			Vec3 localOffset = ci.worldToLocal(contraptionEntity, worldHit, CONTRAPTION_PARTIAL_TICKS);
+			Vec3 localOffset = ci.worldToLocal(contraptionEntity, block.subHitPoint(), CONTRAPTION_PARTIAL_TICKS);
 
 			hook.reattachToContraption(contraptionEntity, localOffset, localKey);
 		}
@@ -848,9 +868,10 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
 			if (hook == null || !hook.isAlive()) continue;
 			if (hook.level() != level) continue;
-			if (hook.attachedEntity != contraptionEntity) continue;
+			if (!(hook.attachment instanceof HookAttachment.ContraptionBlock cb)) continue;
+			if (cb.entity() != contraptionEntity) continue;
 
-			BlockPos localBlock = hook.attachedContraptionLocalBlockPos;
+			BlockPos localBlock = cb.localBlockPos();
 			if (localBlock == null) {
 				hook.detachFromContraption();
 				continue;
@@ -1095,6 +1116,20 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	public void setAttachedContraptionLocalOffset(Vec3 offset) {
 		this.attachedContraptionLocalOffset = offset;
+		this.recomputeAttachment();
+	}
+
+	/**
+	 * Client-side mirror of the server's block-attach state. The wire {@code Block} variant
+	 * only carries the block pos; the sub-hit point comes from the payload's top-level
+	 * {@code hookPos}. Called by {@code ClientNetworkReceivers} so {@link #recomputeAttachment()}
+	 * can produce a {@link HookAttachment.Block} variant on the client too, matching the
+	 * server's view.
+	 */
+	public void setBlockAttachmentClient(BlockPos blockPos, Vec3 hookWorldPos) {
+		this.lastBlockCollision = blockPos;
+		this.lastSubCollisionPos = new Vec(hookWorldPos);
+		this.lastBlockCollisionSide = null;
 		this.recomputeAttachment();
 	}
 

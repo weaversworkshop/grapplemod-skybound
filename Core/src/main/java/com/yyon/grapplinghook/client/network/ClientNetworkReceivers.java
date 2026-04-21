@@ -27,6 +27,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3f;
 
 import java.util.LinkedList;
 
@@ -187,7 +189,13 @@ public final class ClientNetworkReceivers {
 
                 BlockPos hookedBlock = null;
                 switch (payload.attachTarget()) {
-                    case GrappleAttachS2CPayload.GrappleAttachTarget.Block b -> hookedBlock = b.pos();
+                    case GrappleAttachS2CPayload.GrappleAttachTarget.Block b -> {
+                        hookedBlock = b.pos();
+                        // Mirror the server's block-attach state client-side so the hook's
+                        // consolidated `attachment` is a Block variant instead of staying null.
+                        Vector3f hp = payload.hookPos();
+                        grapple.setBlockAttachmentClient(b.pos(), new Vec3(hp.x, hp.y, hp.z));
+                    }
                     case GrappleAttachS2CPayload.GrappleAttachTarget.Entity ent -> {
                         grapple.setAttachedEntityIdClient(ent.id());
                         Entity attached = world.getEntity(ent.id());
