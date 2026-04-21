@@ -11,3 +11,4 @@ pluginManagement {
 include(":Core")
 //include(":Compat:Gliders")
 include(":Compat:Create")
+include(":Compat:Sable")

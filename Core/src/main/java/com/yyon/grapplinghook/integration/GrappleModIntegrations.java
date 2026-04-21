@@ -11,6 +11,7 @@ import com.yyon.grapplinghook.GrappleMod;
 public final class GrappleModIntegrations {
 
     private static ContraptionIntegration contraptionIntegration = new NoopContraptionIntegration();
+    private static SubLevelIntegration subLevelIntegration = new NoopSubLevelIntegration();
 
     private GrappleModIntegrations() {}
 
@@ -31,5 +32,24 @@ public final class GrappleModIntegrations {
 
     public static boolean hasContraptionIntegration() {
         return !(contraptionIntegration instanceof NoopContraptionIntegration);
+    }
+
+    /**
+     * Install a {@link SubLevelIntegration}. Typically called exactly once from
+     * the Sable compat module when it loads. Passing {@code null} clears the
+     * registration back to the no-op default.
+     */
+    public static void setSubLevelIntegration(SubLevelIntegration impl) {
+        subLevelIntegration = (impl != null) ? impl : new NoopSubLevelIntegration();
+        GrappleMod.LOGGER.info("Sub-level integration installed: {}",
+                subLevelIntegration.getClass().getName());
+    }
+
+    public static SubLevelIntegration getSubLevelIntegration() {
+        return subLevelIntegration;
+    }
+
+    public static boolean hasSubLevelIntegration() {
+        return !(subLevelIntegration instanceof NoopSubLevelIntegration);
     }
 }

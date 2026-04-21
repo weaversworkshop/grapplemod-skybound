@@ -144,22 +144,22 @@ public sealed interface HookAttachment
     }
 
     /**
-     * Sable sub-level anchor (Create: Aeronautics ships, etc.) — placeholder variant.
-     * Sub-levels are keyed by UUID (persistent across save/load, unlike entity IDs);
-     * blocks live in a far-away plot region and the follow transform goes through a
-     * future {@code SableIntegration} façade. Included in this refactor so every
-     * {@code switch} on {@link HookAttachment} is exhaustive from day one — the
-     * Sable compat module fills in the two stub throws below.
+     * Sable sub-level anchor (Create: Aeronautics ships, etc.). Sub-levels are keyed
+     * by UUID (persistent across save/load, unlike entity IDs); blocks live in a
+     * far-away plot region that the Sable compat module projects to apparent
+     * world-space each tick via {@link SubLevelIntegration#plotToWorld}. When no
+     * Sable compat is installed, {@link SubLevelIntegration} is a no-op and the
+     * Sable attach paths never fire, so this variant never appears at runtime.
      */
     record SubLevelBlock(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint)
             implements HookAttachment {
         @Override public Vec3 worldHitPoint(float partialTicks) {
-            throw new UnsupportedOperationException(
-                    "SubLevelBlock follow requires the Sable compat module (not yet implemented)");
+            return GrappleModIntegrations.getSubLevelIntegration()
+                    .plotToWorld(subLevelId, plotHitPoint, partialTicks);
         }
         @Override public GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget() {
-            throw new UnsupportedOperationException(
-                    "SubLevelBlock wire transport requires the Sable compat module (not yet implemented)");
+            return new GrappleAttachS2CPayload.GrappleAttachTarget.SubLevel(
+                    subLevelId, plotBlock, plotHitPoint);
         }
     }
 
@@ -190,6 +190,15 @@ public sealed interface HookAttachment
                 yield ent != null
                         ? new ContraptionBlock(ent, eo.localOffset(), null)
                         : ContraptionBlock.fromId(eo.id(), eo.localOffset());
+            }
+
+            case GrappleAttachS2CPayload.GrappleAttachTarget.SubLevel sl -> {
+                com.yyon.grapplinghook.GrappleMod.LOGGER.info(
+                        "[Grapple <-> Sable] CLIENT fromWireTarget: uuid={} plotBlock={} plotHit={} hookWorldPos={} "
+                                + "integrationClass={}",
+                        sl.subLevelId(), sl.plotBlock(), sl.plotHitPoint(), hookWorldPos,
+                        GrappleModIntegrations.getSubLevelIntegration().getClass().getSimpleName());
+                yield new SubLevelBlock(sl.subLevelId(), sl.plotBlock(), sl.plotHitPoint());
             }
         };
     }

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "grapplemodcompat-sable",
+  "version": "${version}",
+  "name": "Sable Compatibility Module",
+  "description": "Grapple mod compatibility for the Sable physics engine (Create: Aeronautics airships, Offroad vehicles, and other Sable-backed moving structures).",
+  "authors": [ "Weaver's Workshop" ],
+  "contact": {},
+  "license": "GPL-3.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [ "com.weaversworkshop.grapplemod.compat.sable.SableCompatEntrypoint" ],
+    "client": [ "com.weaversworkshop.grapplemod.compat.sable.SableClientCompatEntrypoint" ]
+  },
+  "depends": {
+    "grapplemod": "${grapplemod_target_range}"
+  },
+  "recommends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": ">=${minecraft_version}"
+  },
+  "suggests": {
+    "sable": "${sable_target_range}"
+  }
+}

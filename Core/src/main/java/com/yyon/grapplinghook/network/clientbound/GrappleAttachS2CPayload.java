@@ -15,6 +15,8 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Vector3f;
 
+import java.util.UUID;
+
 /*
  * This file is part of GrappleMod.
 
@@ -43,7 +45,8 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
     public enum AttachTargetKind {
         BLOCK((byte) 0),
         ENTITY((byte) 1),
-        CONTRAPTION((byte) 2);
+        CONTRAPTION((byte) 2),
+        SUBLEVEL((byte) 3);
 
         private final byte tag;
         AttachTargetKind(byte tag) { this.tag = tag; }
@@ -58,7 +61,8 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
     }
 
     public sealed interface GrappleAttachTarget
-            permits GrappleAttachTarget.Block, GrappleAttachTarget.Entity, GrappleAttachTarget.EntityOffset {
+            permits GrappleAttachTarget.Block, GrappleAttachTarget.Entity,
+                    GrappleAttachTarget.EntityOffset, GrappleAttachTarget.SubLevel {
 
         AttachTargetKind kind();
 
@@ -74,6 +78,13 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
                         Vec3 offset = Vec3StreamCodec.INSTANCE.decode(buf);
                         yield new EntityOffset(id, offset);
                     }
+                    case SUBLEVEL -> {
+                        long msb = buf.readLong();
+                        long lsb = buf.readLong();
+                        BlockPos plotBlock = BlockPos.STREAM_CODEC.decode(buf);
+                        Vec3 plotHit = Vec3StreamCodec.INSTANCE.decode(buf);
+                        yield new SubLevel(new UUID(msb, lsb), plotBlock, plotHit);
+                    }
                 };
             }
 
@@ -87,6 +98,12 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
                         buf.writeVarInt(eo.id());
                         Vec3StreamCodec.INSTANCE.encode(buf, eo.localOffset());
                     }
+                    case SubLevel sl -> {
+                        buf.writeLong(sl.subLevelId().getMostSignificantBits());
+                        buf.writeLong(sl.subLevelId().getLeastSignificantBits());
+                        BlockPos.STREAM_CODEC.encode(buf, sl.plotBlock());
+                        Vec3StreamCodec.INSTANCE.encode(buf, sl.plotHitPoint());
+                    }
                 }
             }
         };
@@ -99,6 +116,10 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
         }
         record EntityOffset(int id, Vec3 localOffset) implements GrappleAttachTarget {
             @Override public AttachTargetKind kind() { return AttachTargetKind.CONTRAPTION; }
+        }
+        record SubLevel(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint)
+                implements GrappleAttachTarget {
+            @Override public AttachTargetKind kind() { return AttachTargetKind.SUBLEVEL; }
         }
     }
 

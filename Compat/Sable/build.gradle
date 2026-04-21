@@ -1,0 +1,65 @@
+plugins {
+    id 'fabric-loom' version '1.14-SNAPSHOT'
+    id 'maven-publish'
+}
+
+loom {
+
+    runs {
+        client {
+            runDir "run/client"
+            ideConfigGenerated true
+        }
+
+        server {
+            runDir "run/server"
+            ideConfigGenerated true
+        }
+    }
+}
+
+repositories {
+
+    // Sable physics engine (Create: Aeronautics, Offroad, etc. are built on this).
+    maven {
+        name = "RyanHCode Maven"
+        url = "https://maven.ryanhcode.dev/releases"
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation("net.fabricmc:fabric-loader")
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    api project(path: ":Core", configuration: "namedElements")
+
+    // Plain compileOnly (NOT modCompileOnly) so Loom doesn't try to remap or bundle
+    // Sable. Sable's published Fabric artifact is built with a newer Loom version
+    // which breaks our project's Loom when it tries to introspect the jar. At dev
+    // compile time we only need the class symbols; at runtime Sable is a user-installed
+    // dependency provided by the end user (directly or via Sinytra Connector).
+    // Use the sable-common artifact (MojMap-native) rather than sable-fabric (which is
+    // remapped to intermediary). Our Core compiles against MojMap, so common's
+    // net.minecraft.world.level.Level symbols line up correctly.
+    compileOnly("dev.ryanhcode.sable:sable-common-${project.minecraft_version}:${project.sable_version}") {
+        transitive = false
+    }
+    // Companion (math types: Pose3d/Pose3dc, BoundingBox3dc, etc.). Published as a
+    // separate artifact — not bundled into sable-common.
+    compileOnly("dev.ryanhcode.sable-companion:sable-companion-common-${project.minecraft_version}:${project.sable_companion_version}") {
+        transitive = false
+    }
+}
+
+remapJar {
+    archiveClassifier.set("compat")
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force("net.fabricmc:fabric-loader:${project.loader_version}")
+    }
+}

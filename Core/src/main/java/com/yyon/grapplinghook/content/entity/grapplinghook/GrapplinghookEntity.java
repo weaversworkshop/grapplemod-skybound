@@ -9,6 +9,7 @@ import com.yyon.grapplinghook.content.registry.internal.*;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;
 import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
+import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.network.NetworkManager;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachHookS2CPayload;
@@ -53,6 +54,7 @@ import org.joml.Vector3f;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static com.yyon.grapplinghook.content.registry.CustomizationProperties.*;
 
@@ -201,10 +203,10 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	@Override
 	public void lerpTo(double x, double y, double z, float yRot, float xRot, int lerpSteps) {
-		// While tethered to a mob or contraption, the client tracks the anchor locally in tick().
-		// Ignoring server position sync here prevents ~5Hz jitter from tracker updates
-		// fighting our direct setPos.
-		if (this.attachedWorldEntity() != null) return;
+		// While tethered to a moving body (mob, contraption, or sub-level), the client tracks
+		// the anchor locally in tick(). Ignoring server position sync here prevents ~5Hz
+		// jitter from tracker updates fighting our direct setPos.
+		if (this.isAttachedToMovingBody()) return;
 		super.lerpTo(x, y, z, yRot, xRot, lerpSteps);
 	}
 
@@ -276,6 +278,32 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			}
 		}
 
+		// Sable sub-level broad-phase scan. Sub-levels have no Minecraft entity
+		// of their own, so we can't route this through EntityHitResult — instead
+		// we do the raycast → attach directly when a sub-level is hit.
+		if (this.attachment == null && !this.level().isClientSide) {
+			SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+			Vec3 rayStart = this.position();
+			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
+			if (this.tickCount % 5 == 0) {
+				GrappleMod.LOGGER.info("[Grapple <-> Sable] SERVER scan tick={} integration={} ray={}->{}",
+						this.tickCount, sli.getClass().getSimpleName(), rayStart, rayEnd);
+			}
+			@Nullable UUID hitSubLevel = sli.findSubLevelAlongRay(rayStart, rayEnd);
+			if (hitSubLevel != null) {
+				Vec3 precisePoint = sli.raycastSubLevel(hitSubLevel, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
+				if (precisePoint != null) {
+					Vec3 plotHit = sli.worldToPlot(hitSubLevel, precisePoint, CONTRAPTION_PARTIAL_TICKS);
+					BlockPos plotBlock = sli.worldToPlotBlock(hitSubLevel, precisePoint, CONTRAPTION_PARTIAL_TICKS);
+					GrappleMod.LOGGER.info("[Grapple <-> Sable] SERVER attach: uuid={} worldHit={} plotHit={} plotBlock={}",
+							hitSubLevel, precisePoint, plotHit, plotBlock);
+					this.serverAttach(
+							new HookAttachment.SubLevelBlock(hitSubLevel, plotBlock, plotHit),
+							true);
+				}
+			}
+		}
+
 		super.tick();
 
 		// Dispatch follow behavior on the attachment variant.
@@ -307,10 +335,22 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			}
 
 			case HookAttachment.SubLevelBlock slb -> {
-				// Filled in by the Sable compat module. Until then, SubLevelBlock should never
-				// appear at runtime — the Sable attach paths don't exist yet.
-				throw new UnsupportedOperationException(
-						"SubLevelBlock follow requires the Sable compat module");
+				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+				boolean loaded = sli.isSubLevelLoaded(slb.subLevelId());
+				if (!loaded) {
+					GrappleMod.LOGGER.warn("[Grapple <-> Sable] Follow tick: uuid={} NOT LOADED on side={} → detaching",
+							slb.subLevelId(), this.level().isClientSide ? "CLIENT" : "SERVER");
+					this.onAttachedEntityPerished();
+					return;
+				}
+				Vec3 worldPoint = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
+				if (this.tickCount % 20 == 0) {
+					GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick ({}): uuid={} plotHit={} worldHit={} hookPosBefore={}",
+							this.level().isClientSide ? "CLIENT" : "SERVER",
+							slb.subLevelId(), slb.plotHitPoint(), worldPoint, this.position());
+				}
+				this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
+				this.setDeltaMovement(0, 0, 0);
 			}
 		}
 
@@ -420,13 +460,16 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				if (precisePoint != null) {
 					Vec3 localOffset = contraptionIntegration.worldToLocal(
 							entity, precisePoint, CONTRAPTION_PARTIAL_TICKS);
+					Vec3 backToWorld = contraptionIntegration.localToWorld(
+							entity, localOffset, CONTRAPTION_PARTIAL_TICKS);
+					GrappleMod.LOGGER.info(
+							"[Grapple] CREATE-path attach: entity={} id={} entity.pos={} precisePointWorld={} localOffset={} localToWorld(localOffset)={}",
+							entity.getClass().getSimpleName(), entity.getId(), entity.position(),
+							precisePoint, localOffset, backToWorld);
 
 					this.serverAttach(
 							new HookAttachment.ContraptionBlock(entity, localOffset, null),
 							true);
-
-					GrappleMod.LOGGER.debug(
-							"Attached to contraption {} at local offset {}", entity.getId(), localOffset);
 					return;
 				}
 
@@ -443,6 +486,29 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		} else if (blockhit != null) {
 			BlockPos blockpos = blockhit.getBlockPos();
 			Vec3 hitPoint = hit.getLocation();
+
+			// Sable's ProjectileUtilMixin patches the vanilla projectile raycast so it
+			// hits blocks in the far-away plot region. When that fires, the BlockHitResult
+			// carries plot-coord BlockPos / hitPoint (X or Z > 10M), NOT main-world coords.
+			// Detect that here and route it through SubLevelBlock so the rope anchors
+			// correctly via the sub-level's pose transform each tick.
+			boolean looksLikePlotCoord = Math.abs(blockpos.getX()) > 10_000_000
+					|| Math.abs(blockpos.getZ()) > 10_000_000;
+			if (looksLikePlotCoord) {
+				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+				UUID subLevelId = sli.findSubLevelForPlotBlock(blockpos);
+				if (subLevelId != null) {
+					GrappleMod.LOGGER.info("[Grapple <-> Sable] Plot-coord BlockHitResult → SubLevelBlock attach: "
+									+ "uuid={} plotBlock={} plotHit={}",
+							subLevelId, blockpos, hitPoint);
+					this.serverAttach(
+							new HookAttachment.SubLevelBlock(subLevelId, blockpos, hitPoint),
+							true);
+					return;
+				}
+				GrappleMod.LOGGER.warn("[Grapple <-> Sable] Plot-coord BlockHitResult but no sub-level claims block {} — falling back to plain Block attach (rope may misrender)",
+						blockpos);
+			}
 
 			this.serverAttach(
 					new HookAttachment.Block(blockpos, hitPoint, blockhit.getDirection()),
@@ -778,6 +844,97 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		}
 	}
 
+	/**
+	 * Called by the Sable compat module when it observes a new sub-level UUID appear
+	 * (e.g. a {@code PhysicsAssemblerBlockEntity} just converted a structure). Migrates
+	 * any active hook anchored to a block that the sub-level absorbed onto the
+	 * sub-level itself, preserving sub-block hit precision.
+	 */
+	public static void onSubLevelAssembled(UUID subLevelId, Level level) {
+		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+		if (!sli.isSubLevelLoaded(subLevelId)) return;
+		if (level.isClientSide) return;
+
+		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
+			if (hook == null || !hook.isAlive()) continue;
+			if (hook.level() != level) continue;
+			if (!(hook.attachment instanceof HookAttachment.Block block)) continue;
+
+			BlockPos plotBlock = sli.getCapturedPlotPos(subLevelId, block.pos());
+			if (plotBlock == null) continue;
+
+			Vec3 plotHit = sli.worldToPlot(subLevelId, block.subHitPoint(), CONTRAPTION_PARTIAL_TICKS);
+			hook.reattachToSubLevel(subLevelId, plotBlock, plotHit);
+		}
+	}
+
+	/**
+	 * Called by the Sable compat module when a tracked sub-level UUID disappears
+	 * (disassembly, unload, etc.). For each hook anchored to this sub-level, attempts
+	 * a precise re-anchor to the world block that the anchored plot block just landed
+	 * at; if no suitable block is present, detaches the hook cleanly.
+	 */
+	public static void onSubLevelDisassembled(UUID subLevelId, Level level) {
+		if (level.isClientSide) return;
+		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+
+		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
+			if (hook == null || !hook.isAlive()) continue;
+			if (hook.level() != level) continue;
+			if (!(hook.attachment instanceof HookAttachment.SubLevelBlock slb)) continue;
+			if (!slb.subLevelId().equals(subLevelId)) continue;
+
+			// Project the plot block's centre through whatever pose the integration still
+			// has cached for this UUID (in practice the final pose before removal).
+			BlockPos plotBlock = slb.plotBlock();
+			Vec3 plotCenter = new Vec3(plotBlock.getX() + 0.5, plotBlock.getY() + 0.5, plotBlock.getZ() + 0.5);
+			Vec3 worldCenter = sli.plotToWorld(subLevelId, plotCenter, CONTRAPTION_PARTIAL_TICKS);
+			BlockPos candidate = BlockPos.containing(worldCenter);
+
+			BlockState state = level.getBlockState(candidate);
+			Vec3 hookPos = hook.position();
+			double dist = distancePointToAabb(hookPos, new AABB(candidate));
+
+			if (state.isAir() || dist > DISASSEMBLY_REANCHOR_MAX_DIST) {
+				hook.detachFromContraption();
+				continue;
+			}
+
+			hook.reattachToBlock(candidate, hookPos);
+		}
+	}
+
+	/**
+	 * Server-side: switch this hook's anchor from a static block onto a sub-level that
+	 * just absorbed it. Mirror of {@link #reattachToContraption} but keyed by UUID.
+	 */
+	public void reattachToSubLevel(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint) {
+		if (this.level().isClientSide) return;
+		if (this.attachment == null) return;
+
+		this.setAttachment(new HookAttachment.SubLevelBlock(subLevelId, plotBlock, plotHitPoint));
+
+		// Full re-attach packet: no lightweight reanchor payload exists for sub-levels
+		// yet, and the client needs the UUID/plotBlock/plotHitPoint to rebuild the
+		// attachment. Safe here because this path runs off an assembly event, not from
+		// the client-side physics controller's shutdown sequence.
+		Vec3 anchor = this.attachment.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
+		this.setPosRaw(anchor.x, anchor.y, anchor.z);
+		this.setDeltaMovement(0, 0, 0);
+		this.thisPos = Vec.positionVec(this);
+		this.isFirstAttach = true;
+
+		GrappleAttachS2CPayload packet = new GrappleAttachS2CPayload(
+				this.getId(),
+				this.position().toVector3f(),
+				this.shootingEntityID,
+				this.attachment.toWireTarget(),
+				new RopeSnapshot(this.segmentHandler),
+				this.customization
+		);
+		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
+	}
+
 	private static double distancePointToAabb(Vec3 p, AABB box) {
 		double dx = Math.max(Math.max(box.minX - p.x, 0), p.x - box.maxX);
 		double dy = Math.max(Math.max(box.minY - p.y, 0), p.y - box.maxY);
@@ -961,6 +1118,19 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			case HookAttachment.ContraptionBlock cb -> cb.entity();
 			case null, default -> null;
 		};
+	}
+
+	/**
+	 * True iff the hook's current anchor is a moving body (plain entity, Create
+	 * contraption, or Sable sub-level) — anything whose world-space position
+	 * changes between ticks. Callers that previously special-cased the two
+	 * entity-backed variants should use this so {@link HookAttachment.SubLevelBlock}
+	 * also suppresses server position-sync lerp and similar static-target
+	 * fast-paths.
+	 */
+	public boolean isAttachedToMovingBody() {
+		return this.attachedWorldEntity() != null
+				|| this.attachment instanceof HookAttachment.SubLevelBlock;
 	}
 
 	/** The authoritative attachment state. {@code null} if the hook is in flight or detached. */
