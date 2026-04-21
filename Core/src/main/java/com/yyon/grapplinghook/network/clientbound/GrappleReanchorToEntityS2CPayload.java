@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.network.S2CPayload;
+import com.yyon.grapplinghook.network.codec.Vec3StreamCodec;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -30,10 +31,8 @@ public record GrappleReanchorToEntityS2CPayload(int hookId, int newEntityId, Vec
     public static final StreamCodec<RegistryFriendlyByteBuf, GrappleReanchorToEntityS2CPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.INT, GrappleReanchorToEntityS2CPayload::hookId,
             ByteBufCodecs.INT, GrappleReanchorToEntityS2CPayload::newEntityId,
-            ByteBufCodecs.DOUBLE, p -> p.localOffset().x,
-            ByteBufCodecs.DOUBLE, p -> p.localOffset().y,
-            ByteBufCodecs.DOUBLE, p -> p.localOffset().z,
-            (h, e, x, y, z) -> new GrappleReanchorToEntityS2CPayload(h, e, new Vec3(x, y, z))
+            Vec3StreamCodec.INSTANCE, GrappleReanchorToEntityS2CPayload::localOffset,
+            GrappleReanchorToEntityS2CPayload::new
     );
 
     @NotNull

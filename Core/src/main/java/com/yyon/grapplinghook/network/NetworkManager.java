@@ -3,13 +3,9 @@ package com.yyon.grapplinghook.network;
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.network.clientbound.*;
 import com.yyon.grapplinghook.network.serverbound.*;
-import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
-import com.yyon.grapplinghook.physics.io.IHookStateHolder;
-import com.yyon.grapplinghook.util.scheduling.Ticker;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
-import net.fabricmc.fabric.api.networking.v1.S2CPlayChannelEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -48,25 +44,8 @@ public class NetworkManager {
         registerS2CPacket(GrappleReanchorToBlockS2CPayload.PAYLOAD_TYPE, GrappleReanchorToBlockS2CPayload.STREAM_CODEC);
         registerS2CPacket(GrappleDetachS2CPayload.PAYLOAD_TYPE, GrappleDetachS2CPayload.STREAM_CODEC);
         registerS2CPacket(GrappleAttachHookS2CPayload.PAYLOAD_TYPE, GrappleAttachHookS2CPayload.STREAM_CODEC);
-        registerS2CPacket(RestoreGrappleStateS2CPayload.PAYLOAD_TYPE, RestoreGrappleStateS2CPayload.STREAM_CODEC);
         registerS2CPacket(RopeSegmentUpdateS2CPayload.PAYLOAD_TYPE, RopeSegmentUpdateS2CPayload.STREAM_CODEC);
         registerS2CPacket(SyncServerConfigS2CPayload.PAYLOAD_TYPE, SyncServerConfigS2CPayload.STREAM_CODEC);
-
-        S2CPlayChannelEvents.REGISTER.register((handler, sender, server, channels) -> {
-            ServerPlayer player = handler.player;
-
-            // Sanity check
-            if(player.level().isClientSide)
-                return;
-
-            Ticker.grappleMod().queue(3, () -> {
-                if(ServerHookEntityTracker.isSavedHookStateValid(player))
-                    ServerHookEntityTracker.applyFromSavedHookState(player);
-
-                IHookStateHolder hookStateHolder = (IHookStateHolder) player;
-                hookStateHolder.grapplemod$resetLastHookState();
-            });
-        });
     }
 
     public static void packetToServer(C2SPayload payload) {

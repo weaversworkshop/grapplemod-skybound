@@ -3,14 +3,6 @@ package com.yyon.grapplinghook.physics;
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.api.GrappleModServerEvents;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
-import com.yyon.grapplinghook.physics.io.HookSnapshot;
-import com.yyon.grapplinghook.physics.io.IHookStateHolder;
-import com.yyon.grapplinghook.physics.io.SerializableHookState;
-import com.yyon.grapplinghook.util.Vec;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 
@@ -20,10 +12,6 @@ import java.util.*;
  * Handles server-side tracking and aggregation of grappling hook
  */
 public class ServerHookEntityTracker {
-
-	private static final float HOOK_DISTANCE_LENIENCY = 1.2f;
-
-	public static final String NBT_HOOK_STATE = "grapplemod:hook_state";
 
 	private static final HashMap<Integer, HashSet<GrapplinghookEntity>> allGrapplehookEntities = new HashMap<>();
 
@@ -96,73 +84,6 @@ public class ServerHookEntityTracker {
   		
   		ServerHookEntityTracker.removeAllHooksFor(ownerId);
 	}
-
-	public static void savePlayerHookState(ServerPlayer hookHolder, CompoundTag saveTarget) {
-		if(true) return; // todo: reimplement / review
-
-		if(!ServerHookEntityTracker.isAttachedToHooks(hookHolder))
-			return;
-
-		SerializableHookState holderHookState = SerializableHookState.saveNewFrom(hookHolder);
-		CompoundTag grapplemodState = holderHookState.toNBT();
-
-		if(grapplemodState.isEmpty())
-			return;
-
-		saveTarget.put(NBT_HOOK_STATE, grapplemodState);
-	}
-
-	public static void applyFromSavedHookState(ServerPlayer player) {
-		if(true) return; // todo: reimplement / review
-
-		IHookStateHolder stateHolder = (IHookStateHolder) player;
-		SerializableHookState state = stateHolder.grapplemod$getLastHookState().orElseThrow();
-		state.applyTo(player);
-	}
-
-	/**
-	 * Does the hook state still respect physics (the players position hasn't been changed?)
-	 * and is there still a hook in the player's inventory
-	 * For checking integrity of a Compound Tag, {@link SerializableHookState#isValidNBT(CompoundTag)}
-	 */
-	public static boolean isSavedHookStateValid(ServerPlayer player) {
-		if(true) return false; // todo: reimplement / review
-
-		IHookStateHolder stateHolder = (IHookStateHolder) player;
-		Optional<SerializableHookState> optState = stateHolder.grapplemod$getLastHookState();
-
-		if(optState.isEmpty())
-			return false;
-
-		SerializableHookState state = optState.get();
-		List<HookSnapshot> hooks = state.getHooks();
-
-		Vec playerPos = Vec.positionVec(player);
-
-		for(HookSnapshot snapshot: hooks) {
-			Vec hookPos = snapshot.getHookPos();
-			Vec delta = hookPos.sub(playerPos);
-
-			// lengthSquared is more efficient? - this just makes sure the distance between the player and the
-			// hook hasn't changed *unreasonably*. A bit of innacuracy should be fine.
-			double maxDist = Math.pow(snapshot.getRopeSnapshot().getRopeLength(), 2) * HOOK_DISTANCE_LENIENCY;
-			double distSq = delta.lengthSquared();
-
-			if(distSq > maxDist)
-				return false;
-
-			// Check that the block the player is hooked to hasn't been nuked since they left.
-			BlockPos lastBlock = snapshot.getLastBlockCollidedWith();
-			Direction collideFace = snapshot.getLastBlockCollisionSide();
-			boolean cannotHookOn = !player.level().loadedAndEntityCanStandOnFace(lastBlock, player, collideFace);
-
-			if(cannotHookOn)
-				return false;
-		}
-
-		return true;
-	}
-
 
 	public static Set<GrapplinghookEntity> getHooksThrownBy(Entity ownerEntity) {
 		ServerHookEntityTracker.checkOwnerIsNotHookElseWarn(ownerEntity);

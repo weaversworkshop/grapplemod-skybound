@@ -14,7 +14,6 @@ import com.yyon.grapplinghook.network.clientbound.GrappleAttachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToEntityS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToBlockS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
-import com.yyon.grapplinghook.network.clientbound.RestoreGrappleStateS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.RopeSegmentUpdateS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.SyncServerConfigS2CPayload;
 import com.yyon.grapplinghook.physics.attach.HookAttachment;
@@ -54,7 +53,6 @@ public final class ClientNetworkReceivers {
         ClientPlayNetworking.registerGlobalReceiver(GrappleReanchorToBlockS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleReanchorToBlock);
         ClientPlayNetworking.registerGlobalReceiver(GrappleDetachS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleDetach);
         ClientPlayNetworking.registerGlobalReceiver(GrappleAttachHookS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleGrappleAttachHook);
-        ClientPlayNetworking.registerGlobalReceiver(RestoreGrappleStateS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleRestoreGrappleState);
         ClientPlayNetworking.registerGlobalReceiver(RopeSegmentUpdateS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleRopeSegmentUpdate);
         ClientPlayNetworking.registerGlobalReceiver(SyncServerConfigS2CPayload.PAYLOAD_TYPE, ClientNetworkReceivers::handleSyncServerConfig);
     }
@@ -108,10 +106,6 @@ public final class ClientNetworkReceivers {
                 grapple.setAttachPos(payload.attachPos());
             }
         });
-    }
-
-    private static void handleRestoreGrappleState(RestoreGrappleStateS2CPayload payload, ClientPlayNetworking.Context ctx) {
-        //todo: reimplement.
     }
 
     private static void handleRopeSegmentUpdate(RopeSegmentUpdateS2CPayload payload, ClientPlayNetworking.Context ctx) {

@@ -17,7 +17,6 @@ import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToEntityS2CPayl
 import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToBlockS2CPayload;
 import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
-import com.yyon.grapplinghook.physics.io.HookSnapshot;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
@@ -99,16 +98,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	private boolean isAttachedToSurface;
 	public Vec attachDirection = null;
 
-	/**
-	 * If true, the first tick after construction should commit {@link #pendingRestoreAttachment}
-	 * via {@link #serverAttach}. Used when the entity is reconstructed from a {@link HookSnapshot}
-	 * on reconnect — we can't send attach packets from the ctor because the entity isn't in
-	 * the level yet.
-	 */
-	private boolean restoreCollision = false;
-	@Nullable private HookAttachment pendingRestoreAttachment = null;
-
-
 	public double pull;
 
 	public double taut = 1;
@@ -165,33 +154,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.isAttachedToSurface = false;
 	}
 
-	/** Restore from state snapshot -- used when logging in to re-instantiate a player's hook. */
-	public GrapplinghookEntity(HookSnapshot snapshot, HookCustomization volume, Entity shootingEntity, boolean isInPair) {
-		super(ModEntities.GRAPPLE_HOOK.get(), snapshot.getX(), snapshot.getY(), snapshot.getZ(), shootingEntity.level());
-
-		//todo: save pair details to HookSnapshot
-		RopeSnapshot rope = snapshot.getRopeSnapshot();
-
-		this.shootingEntity = shootingEntity;
-		this.shootingEntityID = shootingEntity.getId();
-
-		this.segmentHandler = new RopeSegmentHandler(this, shootingEntity, rope);
-
-		this.customization = volume;
-		this.ropeLength = rope.getRopeLength();
-		this.isAttachedToMainHand = snapshot.isMainHook();
-		this.isInDoublePair = isInPair;
-
-		// Stash the attachment to commit on first tick; can't call serverAttach from the ctor
-		// because the entity isn't in the level yet and that would NPE sending packets.
-		this.pendingRestoreAttachment = snapshot.toAttachment();
-		this.restoreCollision = true;
-
-		GrappleModServerEvents.HOOK_THROW.invoker().onHookThrown(this.shootingEntity, this);
-	}
-
-
-
 	@Override
     public void writeSpawnData(FriendlyByteBuf data) {
 	    data.writeInt(this.shootingEntity != null ? this.shootingEntity.getId() : 0);
@@ -202,9 +164,8 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	    	GrappleMod.LOGGER.warn("error: customization null");
 	    }
 	    this.customization.writeToBuf(data);
-		data.writeBoolean(this.restoreCollision);
     }
-	
+
 	@Override
     public void readSpawnData(FriendlyByteBuf data) {
     	this.shootingEntityID = data.readInt();
@@ -214,7 +175,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.isAttachedToSurface = data.readBoolean();
 	    this.customization = new HookCustomization();
 	    this.customization.readFromBuf(data);
-		this.restoreCollision = data.readBoolean();
     }
 
 	@Override
@@ -318,15 +278,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 		super.tick();
 
-		if(this.restoreCollision && !this.level().isClientSide) {
-			if (this.pendingRestoreAttachment != null) {
-				this.serverAttach(this.pendingRestoreAttachment, true);
-				this.pendingRestoreAttachment = null;
-			}
-			this.restoreCollision = false;
-			return;
-		}
-
 		// Dispatch follow behavior on the attachment variant.
 		switch (this.attachment) {
 			case null -> { /* unattached: no follow */ }
@@ -409,10 +360,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		if(!this.shootingEntity.isAlive()) {
 			return;
 		}
-
-		// Give the entity time to restore the collision
-		if(this.restoreCollision)
-			return;
 
 		// A sanity check - Gives the client side entity a bit more
 		// time to spawn.
@@ -902,7 +849,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.setDeltaMovement(0, 0, 0);
 		this.isFirstAttach = true;
 		this.isAttachedToSurface = true;
-		this.restoreCollision = false;
         this.thisPos = new Vec(x, y, z);
 	}
 

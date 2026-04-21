@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.network.S2CPayload;
+import com.yyon.grapplinghook.network.codec.Vec3StreamCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -25,12 +26,10 @@ public record GrappleReanchorToBlockS2CPayload(int hookId, BlockPos blockPos, Ve
     public static final CustomPacketPayload.Type<GrappleReanchorToBlockS2CPayload> PAYLOAD_TYPE = new Type<>(IDENTIFIER);
 
     public static final StreamCodec<RegistryFriendlyByteBuf, GrappleReanchorToBlockS2CPayload> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.INT,     GrappleReanchorToBlockS2CPayload::hookId,
-            BlockPos.STREAM_CODEC, GrappleReanchorToBlockS2CPayload::blockPos,
-            ByteBufCodecs.DOUBLE,  p -> p.hookWorldPos().x,
-            ByteBufCodecs.DOUBLE,  p -> p.hookWorldPos().y,
-            ByteBufCodecs.DOUBLE,  p -> p.hookWorldPos().z,
-            (h, b, x, y, z) -> new GrappleReanchorToBlockS2CPayload(h, b, new Vec3(x, y, z))
+            ByteBufCodecs.INT,        GrappleReanchorToBlockS2CPayload::hookId,
+            BlockPos.STREAM_CODEC,    GrappleReanchorToBlockS2CPayload::blockPos,
+            Vec3StreamCodec.INSTANCE, GrappleReanchorToBlockS2CPayload::hookWorldPos,
+            GrappleReanchorToBlockS2CPayload::new
     );
 
     @NotNull

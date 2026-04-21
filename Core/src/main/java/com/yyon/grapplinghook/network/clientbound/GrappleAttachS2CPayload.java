@@ -3,6 +3,7 @@ package com.yyon.grapplinghook.network.clientbound;
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;
 import com.yyon.grapplinghook.network.S2CPayload;
+import com.yyon.grapplinghook.network.codec.Vec3StreamCodec;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -70,10 +71,8 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
                     case ENTITY -> new Entity(buf.readVarInt());
                     case CONTRAPTION -> {
                         int id = buf.readVarInt();
-                        double x = buf.readDouble();
-                        double y = buf.readDouble();
-                        double z = buf.readDouble();
-                        yield new EntityOffset(id, new Vec3(x, y, z));
+                        Vec3 offset = Vec3StreamCodec.INSTANCE.decode(buf);
+                        yield new EntityOffset(id, offset);
                     }
                 };
             }
@@ -86,9 +85,7 @@ public record GrappleAttachS2CPayload(int hookId, Vector3f hookPos, int holderId
                     case Entity e -> buf.writeVarInt(e.id());
                     case EntityOffset eo -> {
                         buf.writeVarInt(eo.id());
-                        buf.writeDouble(eo.localOffset().x);
-                        buf.writeDouble(eo.localOffset().y);
-                        buf.writeDouble(eo.localOffset().z);
+                        Vec3StreamCodec.INSTANCE.encode(buf, eo.localOffset());
                     }
                 }
             }
