@@ -15,6 +15,7 @@ import com.yyon.grapplinghook.network.clientbound.GrappleAttachHookS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToEntityS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToBlockS2CPayload;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
 import com.yyon.grapplinghook.physics.io.HookSnapshot;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
@@ -137,6 +138,14 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	 */
 	private BlockPos attachedContraptionLocalBlockPos = null;
 
+	/**
+	 * Consolidated attachment state (step 2 of refactor — shadows the legacy fields above).
+	 * Maintained by {@link #recomputeAttachment()} which is called at the end of every
+	 * mutation method. Once step 6 lands, this becomes the sole source of truth and the
+	 * legacy fields are deleted.
+	 */
+	@Nullable private HookAttachment attachment = null;
+
 	/** Client-side? instantiation. Creates a very basic entity for filling in details later.**/
 	public GrapplinghookEntity(EntityType<? extends GrapplinghookEntity> type, Level world) {
 		super(type, world);
@@ -190,6 +199,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.lastSubCollisionPos = snapshot.getLastSubCollisionPos();
 		this.lastBlockCollisionSide = snapshot.getLastBlockCollisionSide();
 		this.restoreCollision = true;
+		this.recomputeAttachment();
 
 		//this.isAttachedToSurface = snapshot.isAttached();
 
@@ -221,6 +231,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	    this.customization = new HookCustomization();
 	    this.customization.readFromBuf(data);
 		this.restoreCollision = data.readBoolean();
+		this.recomputeAttachment();
     }
 
 	@Override
@@ -299,6 +310,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			Entity e = this.level().getEntity(this.attachedEntityId);
 			if (e != null) {
 				this.attachedEntity = e;
+				this.recomputeAttachment();
 			}
 		}
 
@@ -467,6 +479,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 					this.attachedEntity = entity;
 					this.attachedEntityId = entity.getId();
 					this.attachedContraptionLocalOffset = localOffset;
+					this.recomputeAttachment();
 
 					this.serverAttach(null, new Vec(precisePoint), null, true);
 
@@ -484,6 +497,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			// Plain-entity attach path (mobs, etc.) — follow entity center.
 			this.attachedEntity = entity;
 			this.attachedEntityId = entity.getId();
+			this.recomputeAttachment();
 
 			Vec entityPos = Vec.positionVec(entity);
 			Vec attachPos = new Vec(
@@ -675,6 +689,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.lastBlockCollision = blockpos;
 		this.lastSubCollisionPos = pos;
 		this.lastBlockCollisionSide = sideHit;
+		this.recomputeAttachment();
 
 		if (blockpos != null) {
 			BlockState block = this.level().getBlockState(blockpos);
@@ -767,6 +782,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.lastBlockCollision = null;
 		this.lastBlockCollisionSide = null;
 		this.lastSubCollisionPos = null;
+		this.recomputeAttachment();
 
 		// Intentionally a lightweight reanchor packet rather than a full GrappleAttachS2CPayload:
 		// the full payload rebuilds the client-side physics controller, whose disable() path
@@ -881,6 +897,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.lastSubCollisionPos = new Vec(hookWorldPos);
 		this.lastBlockCollisionSide = null;
 		this.isAttachedToSurface = true;
+		this.recomputeAttachment();
 
 		this.setPosRaw(hookWorldPos.x, hookWorldPos.y, hookWorldPos.z);
 		this.setDeltaMovement(0, 0, 0);
@@ -914,6 +931,13 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.attachedEntityId = -1;
 		this.attachedContraptionLocalOffset = null;
 		this.attachedContraptionLocalBlockPos = null;
+		// Mirror the server-side block fields so recomputeAttachment() produces a Block variant
+		// on the client too. Prior to the refactor the client never tracked these — harmless
+		// because nothing read them client-side, but required once attachment() is authoritative.
+		this.lastBlockCollision = blockPos;
+		this.lastSubCollisionPos = new Vec(hookWorldPos);
+		this.lastBlockCollisionSide = null;
+		this.recomputeAttachment();
 		this.setPosRaw(hookWorldPos.x, hookWorldPos.y, hookWorldPos.z);
 		this.setDeltaMovement(0, 0, 0);
 		this.thisPos = new Vec(hookWorldPos);
@@ -941,6 +965,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.isAttachedToSurface = true;
 		this.restoreCollision = false;
         this.thisPos = new Vec(x, y, z);
+		this.recomputeAttachment();
 	}
 
 	// used for magnet attraction
@@ -1059,14 +1084,59 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	public void setAttachedEntityIdClient(int id) {
 		this.attachedEntityId = id;
+		this.recomputeAttachment();
 	}
 
 	public void setAttachedEntityClient(Entity entity) {
 		this.attachedEntity = entity;
 		this.attachedEntityId = entity != null ? entity.getId() : -1;
+		this.recomputeAttachment();
 	}
 
 	public void setAttachedContraptionLocalOffset(Vec3 offset) {
 		this.attachedContraptionLocalOffset = offset;
+		this.recomputeAttachment();
+	}
+
+	/**
+	 * Shadow view of attachment state as a sealed sum type (refactor in progress).
+	 * Kept in sync with the legacy fields by {@link #recomputeAttachment()}; once
+	 * migration completes it becomes the sole source of truth.
+	 */
+	public @Nullable HookAttachment attachment() { return this.attachment; }
+
+	/**
+	 * Derive the consolidated {@link HookAttachment} from the current legacy field
+	 * values. Called at the end of every mutation method during the step-wise
+	 * refactor so reads can migrate to {@code attachment} independently of writes.
+	 */
+	private void recomputeAttachment() {
+		if (this.attachedEntity != null || this.attachedEntityId != -1) {
+			if (this.attachedContraptionLocalOffset != null) {
+				this.attachment = this.attachedEntity != null
+						? new HookAttachment.ContraptionBlock(
+								this.attachedEntity,
+								this.attachedContraptionLocalOffset,
+								this.attachedContraptionLocalBlockPos)
+						: HookAttachment.ContraptionBlock.fromId(
+								this.attachedEntityId,
+								this.attachedContraptionLocalOffset);
+			} else {
+				this.attachment = this.attachedEntity != null
+						? new HookAttachment.Entity(this.attachedEntity)
+						: HookAttachment.Entity.fromId(this.attachedEntityId);
+			}
+			return;
+		}
+		if (this.lastBlockCollision != null && this.lastSubCollisionPos != null) {
+			this.attachment = new HookAttachment.Block(
+					this.lastBlockCollision,
+					this.lastSubCollisionPos.toVec3d(),
+					this.lastBlockCollisionSide);
+			return;
+		}
+		// isAttachedToSurface can be true client-side with no target fields populated
+		// (spawn packet path); leave attachment null until a target-carrying packet lands.
+		this.attachment = null;
 	}
 }
