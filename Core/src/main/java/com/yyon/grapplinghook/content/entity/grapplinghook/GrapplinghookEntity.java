@@ -36,6 +36,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.entity.projectile.ThrowableItemProjectile;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -278,33 +279,54 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			}
 		}
 
-		// Sable sub-level broad-phase scan. Sub-levels have no Minecraft entity
-		// of their own, so we can't route this through EntityHitResult — instead
-		// we do the raycast → attach directly when a sub-level is hit.
-		if (this.attachment == null && !this.level().isClientSide) {
-			SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+		// Sub-level broad-phase scan + near-sublevel guard, combined.
+		//
+		// Sable's ProjectileUtilMixin patches vanilla projectile collision to look
+		// for hits inside sub-levels' plot-space block storage. Any time the hook's
+		// per-tick move ray passes through a tracked sub-level's apparent-world AABB,
+		// that patched path runs — and when it runs, it can pull plot-coord
+		// BlockGetter state, triggering chunk generation at ~20M coords and hanging
+		// the server for several seconds. Same underlying bug documented in
+		// project_sable_rope_raytrace_hang.md / project_sable_projectile_flight_hang.md.
+		//
+		// The geometric trigger is **ray vs sub-level AABB**, not hook-bbox vs AABB —
+		// so we use {@link SubLevelIntegration#findSubLevelAlongRay} (same ray test
+		// Sable effectively uses) as the gate, not a swept-bbox overlap. The hook's
+		// hitbox is only ~0.25 m, so a swept-bbox check can miss cases where the
+		// ray actually crosses the AABB.
+		//
+		// If the ray hits a sub-level AABB:
+		//   (a) server-side: try our own plot-aware block raycast. Hit → attach.
+		//       Miss (near-miss through an air gap) → let manualProjectileStep
+		//       advance the hook, never running super.tick().
+		//   (b) client-side: just bypass super.tick() too; client hook physics
+		//       re-syncs to the server via the existing tracking packets.
+		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+		UUID nearSubLevel = null;
+		if (this.attachment == null) {
 			Vec3 rayStart = this.position();
 			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
-			if (this.tickCount % 5 == 0) {
-				GrappleMod.LOGGER.info("[Grapple <-> Sable] SERVER scan tick={} integration={} ray={}->{}",
-						this.tickCount, sli.getClass().getSimpleName(), rayStart, rayEnd);
-			}
-			@Nullable UUID hitSubLevel = sli.findSubLevelAlongRay(rayStart, rayEnd);
-			if (hitSubLevel != null) {
-				Vec3 precisePoint = sli.raycastSubLevel(hitSubLevel, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
+			nearSubLevel = sli.findSubLevelAlongRay(rayStart, rayEnd);
+
+			if (nearSubLevel != null && !this.level().isClientSide) {
+				Vec3 precisePoint = sli.raycastSubLevel(nearSubLevel, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
 				if (precisePoint != null) {
-					Vec3 plotHit = sli.worldToPlot(hitSubLevel, precisePoint, CONTRAPTION_PARTIAL_TICKS);
-					BlockPos plotBlock = sli.worldToPlotBlock(hitSubLevel, precisePoint, CONTRAPTION_PARTIAL_TICKS);
-					GrappleMod.LOGGER.info("[Grapple <-> Sable] SERVER attach: uuid={} worldHit={} plotHit={} plotBlock={}",
-							hitSubLevel, precisePoint, plotHit, plotBlock);
+					Vec3 plotHit = sli.worldToPlot(nearSubLevel, precisePoint, CONTRAPTION_PARTIAL_TICKS);
+					BlockPos plotBlock = sli.worldToPlotBlock(nearSubLevel, precisePoint, CONTRAPTION_PARTIAL_TICKS);
 					this.serverAttach(
-							new HookAttachment.SubLevelBlock(hitSubLevel, plotBlock, plotHit),
+							new HookAttachment.SubLevelBlock(nearSubLevel, plotBlock, plotHit),
 							true);
+					this.setDeltaMovement(0, 0, 0);
+					nearSubLevel = null; // attached — no bypass needed
 				}
 			}
 		}
 
-		super.tick();
+		if (nearSubLevel != null) {
+			this.manualProjectileStep();
+		} else {
+			super.tick();
+		}
 
 		// Dispatch follow behavior on the attachment variant.
 		switch (this.attachment) {
@@ -336,44 +358,22 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 			case HookAttachment.SubLevelBlock slb -> {
 				try {
-					String side = this.level().isClientSide ? "CLIENT" : "SERVER";
-					boolean verboseLog = this.tickCount < 5 || this.tickCount % 20 == 0;
-					if (verboseLog) {
-						GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick ENTER ({}) tickCount={} hookId={} uuid={}",
-								side, this.tickCount, this.getId(), slb.subLevelId());
-					}
-					SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-					boolean loaded = sli.isSubLevelLoaded(slb.subLevelId());
-					if (!loaded) {
+					if (!sli.isSubLevelLoaded(slb.subLevelId())) {
 						// Server is authoritative for detach. On the client, the sub-level
 						// may just not have propagated through Sable's network layer yet
-						// (seen in practice right after a block→sub-level migration —
-						// Sable itself logs "Received a sub-level movement packet for a
-						// non-existent sub-level" at the same moment). Detaching the
-						// client hook in that window orphans it while the server keeps
-						// happily following. Skip the position update and wait instead.
+						// (seen right after a block→sub-level migration — Sable itself
+						// logs "Received a sub-level movement packet for a non-existent
+						// sub-level" at the same moment). Detaching the client hook in
+						// that window orphans it while the server keeps following.
 						if (!this.level().isClientSide) {
-							GrappleMod.LOGGER.warn("[Grapple <-> Sable] Follow tick: uuid={} NOT LOADED on side=SERVER → detaching",
-									slb.subLevelId());
 							this.onAttachedEntityPerished();
 							return;
-						}
-						if (verboseLog) {
-							GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick: uuid={} not yet tracked on CLIENT — skipping setPos, waiting for tick poll to catch up.",
-									slb.subLevelId());
 						}
 						break;
 					}
 					Vec3 worldPoint = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
-					if (verboseLog) {
-						GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick BODY ({}): plotHit={} worldHit={} hookPosBefore={}",
-								side, slb.plotHitPoint(), worldPoint, this.position());
-					}
 					this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
 					this.setDeltaMovement(0, 0, 0);
-					if (verboseLog) {
-						GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick EXIT ({}) tickCount={}", side, this.tickCount);
-					}
 				} catch (Throwable err) {
 					GrappleMod.LOGGER.error("[Grapple <-> Sable] Follow tick threw on side={} — detaching so we don't spin on this",
 							this.level().isClientSide ? "CLIENT" : "SERVER", err);
@@ -394,6 +394,45 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	public boolean isAttachedToAnything() {
 		return this.attachment != null;
+	}
+
+	/**
+	 * Minimal in-flight projectile step used when the hook is near a Sable sub-level's
+	 * apparent AABB — replaces {@code super.tick()} so we don't call
+	 * {@link ProjectileUtil#getHitResultOnMoveVector}, which Sable patches to transform
+	 * the ray through plot space. That patched path can walk millions of voxels when a
+	 * large sublevel is nearby, hanging the server for 10+ seconds on a near-miss shot.
+	 *
+	 * <p>Block-hit detection is already handled by the sub-level broad-phase scan
+	 * above (bounded voxel traversal in plot space) plus, outside sub-levels, the
+	 * vanilla static-world blocks won't matter on a near-miss because by definition
+	 * the hook is over air. Entity hits still need to be detected — we use
+	 * {@link ProjectileUtil#getEntityHitResult}, which Sable does NOT patch.</p>
+	 *
+	 * <p>This intentionally skips things like fire burning, water bubble particles,
+	 * and the despawn timer that {@code Projectile.tick} handles. Those are nice-to-have
+	 * cosmetic ticks, not load-bearing for grapple mechanics during the ~20 ticks a
+	 * hook typically spends flying past a sub-level AABB.</p>
+	 */
+	private void manualProjectileStep() {
+		Vec3 delta = this.getDeltaMovement();
+		Vec3 start = this.position();
+		Vec3 end = start.add(delta);
+
+		EntityHitResult entityHit = ProjectileUtil.getEntityHitResult(
+				this.level(), this, start, end,
+				this.getBoundingBox().expandTowards(delta).inflate(1.0),
+				e -> !e.isSpectator() && e.isAlive() && e.isPickable());
+		if (entityHit != null) {
+			this.onHit(entityHit);
+			if (this.isRemoved()) return;
+		}
+
+		this.setPos(end.x, end.y, end.z);
+
+		float drag = this.isInWater() ? 0.8F : 0.99F;
+		double gravity = this.getGravity();
+		this.setDeltaMovement(delta.x * drag, (delta.y - gravity) * drag, delta.z * drag);
 	}
 
 	/** Extracted from tick() — handle the "attached entity is gone" branch. */
@@ -527,9 +566,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
 				UUID subLevelId = sli.findSubLevelForPlotBlock(blockpos);
 				if (subLevelId != null) {
-					GrappleMod.LOGGER.info("[Grapple <-> Sable] Plot-coord BlockHitResult → SubLevelBlock attach: "
-									+ "uuid={} plotBlock={} plotHit={}",
-							subLevelId, blockpos, hitPoint);
 					this.serverAttach(
 							new HookAttachment.SubLevelBlock(subLevelId, blockpos, hitPoint),
 							true);
@@ -560,8 +596,23 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 						false);
 		}
 
-		if (!this.customization.get(BLOCK_PHASE_ROPE.get())) {
-			this.segmentHandler.update(Vec.positionVec(this), Vec.positionVec(this.shootingEntity).add(new Vec(0, this.shootingEntity.getEyeHeight(), 0)), this.ropeLength, true);
+		Vec hookPos = Vec.positionVec(this);
+		Vec playerPos = Vec.positionVec(this.shootingEntity).add(new Vec(0, this.shootingEntity.getEyeHeight(), 0));
+
+		// Server-side rope-wrap raytrace goes through BlockGetter.clip, which Sable
+		// patches to transform the ray into plot space and walk millions of voxels
+		// when it crosses a sub-level's apparent AABB — same bug as the client-side
+		// rope hang (see project_sable_rope_raytrace_hang.md) and the in-flight
+		// projectile hang (project_sable_projectile_flight_hang.md). If the segment
+		// from player to hook intersects any tracked sub-level AABB, drop to the
+		// no-raytrace updatePos path. v2 can swap this for a real plot-aware
+		// wrap raytrace; for v1 the in-flight rope just stays straight over ships.
+		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+		boolean ropeCrossesSubLevel = sli.findSubLevelAlongRay(hookPos.toVec3d(), playerPos.toVec3d()) != null;
+		boolean skipRopeWrap = this.customization.get(BLOCK_PHASE_ROPE.get()) || ropeCrossesSubLevel;
+
+		if (!skipRopeWrap) {
+			this.segmentHandler.update(hookPos, playerPos, this.ropeLength, true);
 
 			if (this.customization.get(STICKY_ROPE.get())) {
 				List<Vec> segments = this.segmentHandler.getSegments();
@@ -582,7 +633,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			}
 
 		} else {
-			this.segmentHandler.updatePos(Vec.positionVec(this), Vec.positionVec(this.shootingEntity).add(new Vec(0, this.shootingEntity.getEyeHeight(), 0)), this.ropeLength);
+			this.segmentHandler.updatePos(hookPos, playerPos, this.ropeLength);
 		}
 
 		Vec farthest = this.segmentHandler.getFarthest();

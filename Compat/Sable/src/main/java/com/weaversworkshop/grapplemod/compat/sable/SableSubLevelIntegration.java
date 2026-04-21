@@ -13,6 +13,7 @@ import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -88,10 +89,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
                 closest = entry.getKey();
             }
         }
-        if (closest != null) {
-            LOGGER.info("[Grapple <-> Sable] findSubLevelAlongRay hit uuid={} ray={}->{} tNear={}",
-                    closest, rayStart, rayEnd, closestDist);
-        }
         return closest;
     }
 
@@ -138,22 +135,18 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         Vec3 plotEnd = pose.transformPositionInverse(rayEnd);
 
         BlockPos hit = voxelTraverse(t.subLevel, plotStart, plotEnd);
-        LOGGER.info("[Grapple <-> Sable] raycastSubLevel uuid={} rayWorld={}->{} rayPlot={}->{} hit={} pose.pos={}",
-                subLevelId, rayStart, rayEnd, plotStart, plotEnd, hit, pose.position());
-        if (hit == null) {
-            // DIAGNOSTIC: if the ray missed, scan the column at the starting (x,z) to
-            // find where the ship's non-air blocks actually live in plot space.
-            diagnoseChunkColumn(t.subLevel, plotStart);
-            return null;
-        }
+        if (hit == null) return null;
 
         Vec3 hitCentre = new Vec3(hit.getX() + 0.5, hit.getY() + 0.5, hit.getZ() + 0.5);
-        Vec3 worldHit = pose.transformPosition(hitCentre);
-        LOGGER.info("[Grapple <-> Sable] raycastSubLevel result: plotCentre={} worldHit={}", hitCentre, worldHit);
-        return worldHit;
+        return pose.transformPosition(hitCentre);
     }
 
-    /** One-shot diagnostic: scan a 16-block tall column at the ray's entry (x,z) and log every non-air Y. */
+    /**
+     * One-shot diagnostic: scan a 16-block tall column at the ray's entry (x,z) and
+     * log every non-air Y. Currently unused — kept as a callable helper for future
+     * debugging since it is self-contained and non-intrusive.
+     */
+    @SuppressWarnings("unused")
     private static void diagnoseChunkColumn(SubLevel subLevel, Vec3 plotStart) {
         LevelPlot plot = subLevel.getPlot();
         if (plot == null) return;
@@ -267,22 +260,15 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
             // LOCAL (indexed within this plot). toLocal does the subtraction.
             ChunkPos globalChunkPos = new ChunkPos(x >> 4, z >> 4);
             if (plot.contains(globalChunkPos)) {
-                ChunkPos localChunkPos = plot.toLocal(globalChunkPos);
-                LevelChunk chunk = plot.getChunk(localChunkPos);
+                LevelChunk chunk = plot.getChunk(plot.toLocal(globalChunkPos));
                 if (chunk != null) {
                     BlockPos probe = new BlockPos(x, y, z);
                     BlockState state = chunk.getBlockState(probe);
-                    boolean collidable = !state.isAir()
-                            && !state.getCollisionShape(EmptyBlockGetter.INSTANCE, probe).isEmpty();
-                    LOGGER.info("[Grapple <-> Sable] voxelTraverse probe i={} pos=({}, {}, {}) global={} local={} state={} collidable={}",
-                            i, x, y, z, globalChunkPos, localChunkPos, state.getBlock(), collidable);
-                    if (collidable) return probe;
-                } else {
-                    LOGGER.info("[Grapple <-> Sable] voxelTraverse probe i={} global={} local={} chunk NULL (unloaded)",
-                            i, globalChunkPos, plot.toLocal(globalChunkPos));
+                    if (!state.isAir()
+                            && !state.getCollisionShape(EmptyBlockGetter.INSTANCE, probe).isEmpty()) {
+                        return probe;
+                    }
                 }
-            } else {
-                LOGGER.info("[Grapple <-> Sable] voxelTraverse probe i={} global={} OUTSIDE plot", i, globalChunkPos);
             }
             if (x == endX && y == endY && z == endZ) return null;
 
@@ -381,6 +367,21 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
     public @Nullable SubLevel getSubLevel(UUID subLevelId) {
         Tracked t = tracked.get(subLevelId);
         return t != null ? t.subLevel : null;
+    }
+
+    @Override
+    public boolean anyTrackedSubLevelOverlaps(AABB probe) {
+        for (Map.Entry<UUID, Tracked> entry : tracked.entrySet()) {
+            SubLevel sl = entry.getValue().subLevel;
+            if (sl.isRemoved()) continue;
+            BoundingBox3dc bb = sl.boundingBox();
+            if (bb == null) continue;
+            if (probe.maxX < bb.minX() || probe.minX > bb.maxX()) continue;
+            if (probe.maxY < bb.minY() || probe.minY > bb.maxY()) continue;
+            if (probe.maxZ < bb.minZ() || probe.minZ > bb.maxZ()) continue;
+            return true;
+        }
+        return false;
     }
 
     @Override

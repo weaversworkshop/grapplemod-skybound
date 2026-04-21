@@ -1,6 +1,7 @@
 package com.yyon.grapplinghook.integration;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
@@ -51,5 +52,10 @@ public final class NoopSubLevelIntegration implements SubLevelIntegration {
     @Override
     public @Nullable UUID findSubLevelForPlotBlock(BlockPos plotPos) {
         return null;
+    }
+
+    @Override
+    public boolean anyTrackedSubLevelOverlaps(AABB probe) {
+        return false;
     }
 }

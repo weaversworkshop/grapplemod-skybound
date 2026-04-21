@@ -1,6 +1,7 @@
 package com.yyon.grapplinghook.integration;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
@@ -79,4 +80,14 @@ public interface SubLevelIntegration {
      *         claims that plot block.
      */
     @Nullable UUID findSubLevelForPlotBlock(BlockPos plotPos);
+
+    /**
+     * Cheap O(n) test: does any tracked sub-level's apparent-world AABB intersect
+     * {@code probe}? Used as a gate for the in-flight hook to skip
+     * {@code super.tick()}'s vanilla projectile raycast when near a sub-level,
+     * since that raycast routes through Sable's {@code ProjectileUtilMixin} and
+     * can walk millions of voxels in plot space (the same class of hang as
+     * {@code BlockGetter.clip} does for rope wrapping).
+     */
+    boolean anyTrackedSubLevelOverlaps(AABB probe);
 }

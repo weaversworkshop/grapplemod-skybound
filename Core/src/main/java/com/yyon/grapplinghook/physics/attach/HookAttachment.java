@@ -192,14 +192,8 @@ public sealed interface HookAttachment
                         : ContraptionBlock.fromId(eo.id(), eo.localOffset());
             }
 
-            case GrappleAttachS2CPayload.GrappleAttachTarget.SubLevel sl -> {
-                com.yyon.grapplinghook.GrappleMod.LOGGER.info(
-                        "[Grapple <-> Sable] CLIENT fromWireTarget: uuid={} plotBlock={} plotHit={} hookWorldPos={} "
-                                + "integrationClass={}",
-                        sl.subLevelId(), sl.plotBlock(), sl.plotHitPoint(), hookWorldPos,
-                        GrappleModIntegrations.getSubLevelIntegration().getClass().getSimpleName());
-                yield new SubLevelBlock(sl.subLevelId(), sl.plotBlock(), sl.plotHitPoint());
-            }
+            case GrappleAttachS2CPayload.GrappleAttachTarget.SubLevel sl ->
+                    new SubLevelBlock(sl.subLevelId(), sl.plotBlock(), sl.plotHitPoint());
         };
     }
 }
