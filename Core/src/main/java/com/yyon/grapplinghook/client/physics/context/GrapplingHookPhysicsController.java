@@ -15,6 +15,7 @@ import com.yyon.grapplinghook.network.serverbound.HaltCustomPhysicsC2SPayload;
 import com.yyon.grapplinghook.network.serverbound.PhysicsUpdateC2SPayload;
 import com.yyon.grapplinghook.network.serverbound.PlayerMovementC2SPayload;
 import com.yyon.grapplinghook.physics.PlayerPhysicsFrame;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.util.EnchantmentValues;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
@@ -294,8 +295,17 @@ public class GrapplingHookPhysicsController {
 			Vec hookPos = Vec.positionVec(hookEntity);
 			RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
 
-			// Update segment handler (handles rope bends)
-			if (this.custom.get(BLOCK_PHASE_ROPE.get())) {
+			// Update segment handler (handles rope bends).
+			// Force the no-raytrace update path when anchored to a Sable sub-level: the
+			// wrapping code calls BlockGetter.clip(), which Sable patches via mixin. That
+			// mixin hands the ray's block-state lookups through Level.getBlockState at
+			// plot coordinates (~20 million), and traverseBlocks then walks a ray whose
+			// effective length spans millions of voxels — the render thread burns 100%
+			// CPU and the game hangs. Rope wrapping on sub-levels is explicitly v2 work;
+			// v1 uses the straight-line rope.
+			boolean skipRopeWrap = this.custom.get(BLOCK_PHASE_ROPE.get())
+					|| hookEntity.attachment() instanceof HookAttachment.SubLevelBlock;
+			if (skipRopeWrap) {
 				segmentHandler.updatePos(hookPos, playerPos, hookEntity.ropeLength);
 			} else {
 				segmentHandler.update(hookPos, playerPos, hookEntity.ropeLength, false);

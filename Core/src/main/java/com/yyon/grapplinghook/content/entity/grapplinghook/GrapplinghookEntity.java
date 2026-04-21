@@ -335,22 +335,39 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			}
 
 			case HookAttachment.SubLevelBlock slb -> {
-				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-				boolean loaded = sli.isSubLevelLoaded(slb.subLevelId());
-				if (!loaded) {
-					GrappleMod.LOGGER.warn("[Grapple <-> Sable] Follow tick: uuid={} NOT LOADED on side={} → detaching",
-							slb.subLevelId(), this.level().isClientSide ? "CLIENT" : "SERVER");
+				try {
+					String side = this.level().isClientSide ? "CLIENT" : "SERVER";
+					// Log every tick for the first 5 ticks after an attach, then every 20. Helps
+					// tell "tick silently hung" apart from "tick never ran" when diagnosing freezes.
+					boolean verboseLog = this.tickCount < 5 || this.tickCount % 20 == 0;
+					if (verboseLog) {
+						GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick ENTER ({}) tickCount={} hookId={} uuid={}",
+								side, this.tickCount, this.getId(), slb.subLevelId());
+					}
+					SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+					boolean loaded = sli.isSubLevelLoaded(slb.subLevelId());
+					if (!loaded) {
+						GrappleMod.LOGGER.warn("[Grapple <-> Sable] Follow tick: uuid={} NOT LOADED on side={} → detaching",
+								slb.subLevelId(), side);
+						this.onAttachedEntityPerished();
+						return;
+					}
+					Vec3 worldPoint = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
+					if (verboseLog) {
+						GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick BODY ({}): plotHit={} worldHit={} hookPosBefore={}",
+								side, slb.plotHitPoint(), worldPoint, this.position());
+					}
+					this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
+					this.setDeltaMovement(0, 0, 0);
+					if (verboseLog) {
+						GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick EXIT ({}) tickCount={}", side, this.tickCount);
+					}
+				} catch (Throwable err) {
+					GrappleMod.LOGGER.error("[Grapple <-> Sable] Follow tick threw on side={} — detaching so we don't spin on this",
+							this.level().isClientSide ? "CLIENT" : "SERVER", err);
 					this.onAttachedEntityPerished();
 					return;
 				}
-				Vec3 worldPoint = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
-				if (this.tickCount % 20 == 0) {
-					GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick ({}): uuid={} plotHit={} worldHit={} hookPosBefore={}",
-							this.level().isClientSide ? "CLIENT" : "SERVER",
-							slb.subLevelId(), slb.plotHitPoint(), worldPoint, this.position());
-				}
-				this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
-				this.setDeltaMovement(0, 0, 0);
 			}
 		}
 
@@ -879,28 +896,35 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
 
 		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
-			if (hook == null || !hook.isAlive()) continue;
-			if (hook.level() != level) continue;
-			if (!(hook.attachment instanceof HookAttachment.SubLevelBlock slb)) continue;
-			if (!slb.subLevelId().equals(subLevelId)) continue;
+			try {
+				if (hook == null || !hook.isAlive()) continue;
+				if (hook.level() != level) continue;
+				if (!(hook.attachment instanceof HookAttachment.SubLevelBlock slb)) continue;
+				if (!slb.subLevelId().equals(subLevelId)) continue;
 
-			// Project the plot block's centre through whatever pose the integration still
-			// has cached for this UUID (in practice the final pose before removal).
-			BlockPos plotBlock = slb.plotBlock();
-			Vec3 plotCenter = new Vec3(plotBlock.getX() + 0.5, plotBlock.getY() + 0.5, plotBlock.getZ() + 0.5);
-			Vec3 worldCenter = sli.plotToWorld(subLevelId, plotCenter, CONTRAPTION_PARTIAL_TICKS);
-			BlockPos candidate = BlockPos.containing(worldCenter);
+				BlockPos plotBlock = slb.plotBlock();
+				Vec3 plotCenter = new Vec3(plotBlock.getX() + 0.5, plotBlock.getY() + 0.5, plotBlock.getZ() + 0.5);
+				Vec3 worldCenter = sli.plotToWorld(subLevelId, plotCenter, CONTRAPTION_PARTIAL_TICKS);
+				BlockPos candidate = BlockPos.containing(worldCenter);
 
-			BlockState state = level.getBlockState(candidate);
-			Vec3 hookPos = hook.position();
-			double dist = distancePointToAabb(hookPos, new AABB(candidate));
+				BlockState state = level.getBlockState(candidate);
+				Vec3 hookPos = hook.position();
+				double dist = distancePointToAabb(hookPos, new AABB(candidate));
 
-			if (state.isAir() || dist > DISASSEMBLY_REANCHOR_MAX_DIST) {
-				hook.detachFromContraption();
-				continue;
+				if (state.isAir() || dist > DISASSEMBLY_REANCHOR_MAX_DIST) {
+					hook.detachFromContraption();
+					continue;
+				}
+
+				hook.reattachToBlock(candidate, hookPos);
+			} catch (Throwable err) {
+				// Don't let one broken reattach take down the rest of the loop or the server.
+				GrappleMod.LOGGER.error("[Grapple <-> Sable] onSubLevelDisassembled: reattach for hook {} failed; detaching as fallback",
+						hook != null ? hook.getId() : "null", err);
+				if (hook != null && hook.isAlive()) {
+					try { hook.detachFromContraption(); } catch (Throwable ignored) {}
+				}
 			}
-
-			hook.reattachToBlock(candidate, hookPos);
 		}
 	}
 

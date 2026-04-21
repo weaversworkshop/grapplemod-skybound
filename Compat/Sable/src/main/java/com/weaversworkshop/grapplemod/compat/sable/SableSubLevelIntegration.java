@@ -57,7 +57,12 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
 
     @Override
     public boolean isSubLevelLoaded(UUID subLevelId) {
-        return tracked.containsKey(subLevelId);
+        Tracked t = tracked.get(subLevelId);
+        if (t == null) return false;
+        // Sable marks the SubLevel removed during disassembly; treat it as unloaded
+        // even if our tick-poll hasn't yet observed the UUID disappear from the container.
+        if (t.subLevel.isRemoved()) return false;
+        return true;
     }
 
     @Override
@@ -292,20 +297,28 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
     @Override
     public Vec3 plotToWorld(UUID subLevelId, Vec3 plotPoint, float partialTicks) {
         Tracked t = tracked.get(subLevelId);
-        if (t == null) {
-            LOGGER.warn("[Grapple <-> Sable] plotToWorld called for UNTRACKED uuid={}; returning identity (plot={})",
-                    subLevelId, plotPoint);
+        if (t == null || t.subLevel.isRemoved()) {
             return plotPoint;
         }
-        Vec3 world = t.subLevel.logicalPose().transformPosition(plotPoint);
-        return world;
+        try {
+            return t.subLevel.logicalPose().transformPosition(plotPoint);
+        } catch (Throwable err) {
+            LOGGER.warn("[Grapple <-> Sable] plotToWorld threw for uuid={} — sub-level may be in teardown; returning identity.",
+                    subLevelId, err);
+            return plotPoint;
+        }
     }
 
     @Override
     public Vec3 worldToPlot(UUID subLevelId, Vec3 worldPoint, float partialTicks) {
         Tracked t = tracked.get(subLevelId);
-        if (t == null) return worldPoint;
-        return t.subLevel.logicalPose().transformPositionInverse(worldPoint);
+        if (t == null || t.subLevel.isRemoved()) return worldPoint;
+        try {
+            return t.subLevel.logicalPose().transformPositionInverse(worldPoint);
+        } catch (Throwable err) {
+            LOGGER.warn("[Grapple <-> Sable] worldToPlot threw for uuid={}", subLevelId, err);
+            return worldPoint;
+        }
     }
 
     @Override

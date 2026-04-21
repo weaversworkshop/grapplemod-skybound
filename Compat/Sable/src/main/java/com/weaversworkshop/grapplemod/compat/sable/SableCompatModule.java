@@ -52,11 +52,24 @@ public class SableCompatModule {
     }
 
     private void onLevelTickEnd(ServerLevel level) {
+        try {
+            onLevelTickEndInner(level);
+        } catch (Throwable err) {
+            // Never let a Sable-side hiccup tear down the server tick loop.
+            LOGGER.error("[Grapple <-> Sable] Sub-level tick poll threw — swallowing so the server keeps ticking.",
+                    err);
+        }
+    }
+
+    private void onLevelTickEndInner(ServerLevel level) {
         SubLevelContainer container = SubLevelContainer.getContainer(level);
         if (container == null) return;
 
         Set<UUID> current = new HashSet<>();
         for (SubLevel sl : container.getAllSubLevels()) {
+            // Skip sub-levels marked removed but not yet evicted from the container —
+            // their backing plot state may already be nulled.
+            if (sl.isRemoved()) continue;
             UUID id = sl.getUniqueId();
             current.add(id);
             this.integration.trackSubLevel(id, sl, level);
@@ -66,13 +79,26 @@ public class SableCompatModule {
 
         for (UUID fresh : current) {
             if (!previous.contains(fresh)) {
-                GrapplinghookEntity.onSubLevelAssembled(fresh, level);
+                try {
+                    GrapplinghookEntity.onSubLevelAssembled(fresh, level);
+                } catch (Throwable err) {
+                    LOGGER.error("[Grapple <-> Sable] onSubLevelAssembled({}) threw", fresh, err);
+                }
             }
         }
 
         for (UUID gone : previous) {
             if (!current.contains(gone)) {
-                GrapplinghookEntity.onSubLevelDisassembled(gone, level);
+                LOGGER.info("[Grapple <-> Sable] Sub-level disappeared from container: uuid={} — dispatching disassembly handler",
+                        gone);
+                try {
+                    GrapplinghookEntity.onSubLevelDisassembled(gone, level);
+                } catch (Throwable err) {
+                    LOGGER.error("[Grapple <-> Sable] onSubLevelDisassembled({}) threw", gone, err);
+                }
+                // Untrack AFTER the handler so plotToWorld etc. can still resolve the
+                // final pose during re-anchor. The handler itself bails out early if
+                // the SubLevel is already marked removed.
                 this.integration.untrackSubLevel(gone);
             }
         }
