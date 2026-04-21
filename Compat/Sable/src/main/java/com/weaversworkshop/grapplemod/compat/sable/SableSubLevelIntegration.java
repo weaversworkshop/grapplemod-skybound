@@ -72,6 +72,7 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
 
         for (Map.Entry<UUID, Tracked> entry : tracked.entrySet()) {
             SubLevel sl = entry.getValue().subLevel;
+            if (sl.isRemoved()) continue;
 
             BoundingBox3dc bounds = sl.boundingBox();
             if (bounds == null) continue;
@@ -332,22 +333,48 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         if (t == null) return null;
 
         // Project the world block's centre into plot space and check whether Sable has
-        // a real block there. This is a best-effort: freshly-captured assembly state
-        // should map the world block's centre cleanly onto a plot block.
+        // a real block there. Freshly-captured assembly state should map cleanly, but
+        // pose rotation/offset or the centre sitting right on a plot-cell boundary can
+        // land us one cell off — scan a 3×3×3 neighbourhood as a fallback.
         Vec3 worldCentre = new Vec3(worldPos.getX() + 0.5, worldPos.getY() + 0.5, worldPos.getZ() + 0.5);
         Vec3 plotPoint = t.subLevel.logicalPose().transformPositionInverse(worldCentre);
-        BlockPos plotBlock = BlockPos.containing(plotPoint);
+        BlockPos centre = BlockPos.containing(plotPoint);
 
         LevelPlot plot = t.subLevel.getPlot();
         if (plot == null) return null;
-        ChunkPos globalChunkPos = new ChunkPos(plotBlock.getX() >> 4, plotBlock.getZ() >> 4);
+
+        BlockPos hit = probeNonAir(plot, centre);
+        if (hit != null) return hit;
+
+        // Neighbourhood fallback, nearest-first.
+        for (int r = 1; r <= 1; r++) {
+            for (int dx = -r; dx <= r; dx++)
+                for (int dy = -r; dy <= r; dy++)
+                    for (int dz = -r; dz <= r; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) continue;
+                        BlockPos probe = centre.offset(dx, dy, dz);
+                        BlockPos result = probeNonAir(plot, probe);
+                        if (result != null) {
+                            LOGGER.info("[Grapple <-> Sable] getCapturedPlotPos uuid={} worldPos={} plotCentre={} (air) — found neighbour at {} (offset {},{},{})",
+                                    subLevelId, worldPos, centre, result, dx, dy, dz);
+                            return result;
+                        }
+                    }
+        }
+
+        LOGGER.info("[Grapple <-> Sable] getCapturedPlotPos uuid={} worldPos={} → plotPoint={} plotCentre={} — all 27 cells air, migration will skip.",
+                subLevelId, worldPos, plotPoint, centre);
+        return null;
+    }
+
+    /** Returns {@code probe} if the plot has a non-air block there, else {@code null}. */
+    private static @Nullable BlockPos probeNonAir(LevelPlot plot, BlockPos probe) {
+        ChunkPos globalChunkPos = new ChunkPos(probe.getX() >> 4, probe.getZ() >> 4);
         if (!plot.contains(globalChunkPos)) return null;
         LevelChunk chunk = plot.getChunk(plot.toLocal(globalChunkPos));
         if (chunk == null) return null;
-        BlockState state = chunk.getBlockState(plotBlock);
-        if (state.isAir()) return null;
-
-        return plotBlock;
+        BlockState state = chunk.getBlockState(probe);
+        return state.isAir() ? null : probe;
     }
 
     /** Exposes the tracked {@link Level} for a UUID — used by the mixin to look up pose. */
@@ -360,7 +387,13 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
     public @Nullable UUID findSubLevelForPlotBlock(BlockPos plotPos) {
         ChunkPos chunkPos = new ChunkPos(plotPos.getX() >> 4, plotPos.getZ() >> 4);
         for (Map.Entry<UUID, Tracked> entry : tracked.entrySet()) {
-            LevelPlot plot = entry.getValue().subLevel.getPlot();
+            SubLevel sl = entry.getValue().subLevel;
+            // Skip stale entries that Sable has marked removed but our tick poll
+            // hasn't untracked yet. Plot regions can be reused by a successor
+            // SubLevel with a different UUID, so returning the stale UUID would
+            // cause the next follow tick to detach immediately.
+            if (sl.isRemoved()) continue;
+            LevelPlot plot = sl.getPlot();
             if (plot == null) continue;
             if (plot.contains(chunkPos)) return entry.getKey();
         }

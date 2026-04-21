@@ -54,6 +54,8 @@ public class GrapplingHookPhysicsController {
 	private final HashSet<GrapplinghookEntity> grapplehookEntities = new HashSet<>();
 	private final HashSet<Integer> grapplehookEntityIds = new HashSet<>();
 
+	public boolean ownsHook(int hookId) { return this.grapplehookEntityIds.contains(hookId); }
+
 	private boolean isControllerActive = true;
 	
 	protected Vec motion;

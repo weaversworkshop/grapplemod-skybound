@@ -337,8 +337,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			case HookAttachment.SubLevelBlock slb -> {
 				try {
 					String side = this.level().isClientSide ? "CLIENT" : "SERVER";
-					// Log every tick for the first 5 ticks after an attach, then every 20. Helps
-					// tell "tick silently hung" apart from "tick never ran" when diagnosing freezes.
 					boolean verboseLog = this.tickCount < 5 || this.tickCount % 20 == 0;
 					if (verboseLog) {
 						GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick ENTER ({}) tickCount={} hookId={} uuid={}",
@@ -347,10 +345,24 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 					SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
 					boolean loaded = sli.isSubLevelLoaded(slb.subLevelId());
 					if (!loaded) {
-						GrappleMod.LOGGER.warn("[Grapple <-> Sable] Follow tick: uuid={} NOT LOADED on side={} → detaching",
-								slb.subLevelId(), side);
-						this.onAttachedEntityPerished();
-						return;
+						// Server is authoritative for detach. On the client, the sub-level
+						// may just not have propagated through Sable's network layer yet
+						// (seen in practice right after a block→sub-level migration —
+						// Sable itself logs "Received a sub-level movement packet for a
+						// non-existent sub-level" at the same moment). Detaching the
+						// client hook in that window orphans it while the server keeps
+						// happily following. Skip the position update and wait instead.
+						if (!this.level().isClientSide) {
+							GrappleMod.LOGGER.warn("[Grapple <-> Sable] Follow tick: uuid={} NOT LOADED on side=SERVER → detaching",
+									slb.subLevelId());
+							this.onAttachedEntityPerished();
+							return;
+						}
+						if (verboseLog) {
+							GrappleMod.LOGGER.info("[Grapple <-> Sable] Follow tick: uuid={} not yet tracked on CLIENT — skipping setPos, waiting for tick poll to catch up.",
+									slb.subLevelId());
+						}
+						break;
 					}
 					Vec3 worldPoint = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
 					if (verboseLog) {
@@ -878,9 +890,15 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			if (!(hook.attachment instanceof HookAttachment.Block block)) continue;
 
 			BlockPos plotBlock = sli.getCapturedPlotPos(subLevelId, block.pos());
-			if (plotBlock == null) continue;
+			if (plotBlock == null) {
+				GrappleMod.LOGGER.info("[Grapple <-> Sable] onSubLevelAssembled uuid={} hookId={} worldBlock={} — getCapturedPlotPos returned null; leaving hook on static block.",
+						subLevelId, hook.getId(), block.pos());
+				continue;
+			}
 
 			Vec3 plotHit = sli.worldToPlot(subLevelId, block.subHitPoint(), CONTRAPTION_PARTIAL_TICKS);
+			GrappleMod.LOGGER.info("[Grapple <-> Sable] onSubLevelAssembled uuid={} hookId={} migrating Block→SubLevelBlock: worldBlock={} → plotBlock={} plotHit={}",
+					subLevelId, hook.getId(), block.pos(), plotBlock, plotHit);
 			hook.reattachToSubLevel(subLevelId, plotBlock, plotHit);
 		}
 	}

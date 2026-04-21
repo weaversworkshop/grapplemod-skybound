@@ -6,6 +6,7 @@ import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
 import com.yyon.grapplinghook.content.entity.grapplinghook.IExtendedSpawnPacketEntity;
 import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
+import com.yyon.grapplinghook.client.physics.context.GrapplingHookPhysicsController;
 import com.yyon.grapplinghook.content.physics.PhysicsControllers;
 import com.yyon.grapplinghook.network.clientbound.AddExtraEntityDataS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.DetachSingleHookS2CPayload;
@@ -187,6 +188,20 @@ public final class ClientNetworkReceivers {
             }
 
             segmentHandler.forceSetPos(new Vec(payload.hookPos()), Vec.positionVec(holder));
+
+            // Reattach path: if this holder already has a physics controller that owns this
+            // exact hook entity, don't go through createControl — it calls disable() on the
+            // existing controller, which fires HaltCustomPhysicsC2SPayload, which calls
+            // removeServer() and discards the hook entity. For server-initiated reanchors
+            // (e.g. Sable sub-level migration via reattachToSubLevel), we only want to swap
+            // the attachment + rope snapshot. The controller itself stays intact.
+            GrapplingHookPhysicsController existing = GrappleModClient.get()
+                    .getClientControllerManager()
+                    .getController(payload.holderId());
+            if (existing != null && existing.ownsHook(payload.hookId())) {
+                return;
+            }
+
             GrappleModClient.get()
                     .getClientControllerManager()
                     .createControl(PhysicsControllers.GRAPPLING_HOOK, payload.hookId(), payload.holderId(), world, hookedBlock, payload.customization());
