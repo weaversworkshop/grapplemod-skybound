@@ -341,7 +341,10 @@ public class GrapplingHookPhysicsController {
 			if (oldspherevec.length() >= remainingLength) {
 				if (oldspherevec.length() - remainingLength > GrappleModCommonConfig.get().getRopeSnapBuffer()) {
 					// if rope is too long, the rope snaps
-
+					GrappleMod.LOGGER.info("[HookDbg] SNAP! hookId={} ropeLength={} distToAnchor={} remaining={} oldSphere={} diff={} buffer={} bends={} anchor={}",
+							hookEntity.getId(), hookEntity.ropeLength, distToAnchor, remainingLength, oldspherevec.length(),
+							oldspherevec.length() - remainingLength, GrappleModCommonConfig.get().getRopeSnapBuffer(),
+							segmentHandler.getBends().size(), anchor);
 					this.disable();
 					this.updateServerPos();
 					return;
@@ -912,7 +915,11 @@ public class GrapplingHookPhysicsController {
 
 	public void addHookEntity(GrapplinghookEntity hookEntity) {
 		this.grapplehookEntities.add(hookEntity);
-		hookEntity.ropeLength = hookEntity.getSegmentHandler().getDist(Vec.positionVec(hookEntity), Vec.positionVec(holder).add(new Vec(0, holder.getEyeHeight(), 0)));
+		double newLen = hookEntity.getSegmentHandler().getDist(Vec.positionVec(hookEntity), Vec.positionVec(holder).add(new Vec(0, holder.getEyeHeight(), 0)));
+		GrappleMod.LOGGER.info("[HookDbg] addHookEntity hookId={} ropeLength={} bends={} hookPos={} holderEye={}",
+				hookEntity.getId(), newLen, hookEntity.getSegmentHandler().getBends().size(),
+				Vec.positionVec(hookEntity), Vec.positionVec(holder).add(new Vec(0, holder.getEyeHeight(), 0)));
+		hookEntity.ropeLength = newLen;
 		this.grapplehookEntityIds.add(hookEntity.getId());
 	}
 

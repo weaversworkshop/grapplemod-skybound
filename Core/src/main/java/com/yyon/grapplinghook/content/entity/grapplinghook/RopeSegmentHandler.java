@@ -86,9 +86,39 @@ public class RopeSegmentHandler {
 		this.prevHolderPos = Vec.positionVec(holder);
 	}
 
-	/** Replace the current rope shape with the snapshot's contents. */
+	/**
+	 * Replace the current rope shape with the snapshot's contents. Non-WORLD
+	 * bends require a nativePos fix-up: the wire codec and NBT only carry
+	 * worldPos for each bend, so {@code RopeSnapshot.fromWire} constructs bends
+	 * with {@code nativePos == worldPos}. For SUBLEVEL / CONTRAPTION bends that
+	 * value must be in plot-space / contraption-local coords for
+	 * {@link #refreshWorldCoords} to project back correctly — otherwise
+	 * {@code plotToWorld} (or {@code localToWorld}) receives already-world
+	 * coordinates and produces million-block garbage. We recover the correct
+	 * nativePos here by running the inverse transform through the integration.
+	 */
 	public void loadFromSnapshot(RopeSnapshot snapshot) {
-		this.bends = new LinkedList<>(snapshot.getBends());
+		this.bends = new LinkedList<>();
+		for (RopeBend src : snapshot.getBends()) {
+			RopeBend fixed = src;
+			if (src.space instanceof AnchorSpace.SubLevel sl) {
+				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+				if (sli.isSubLevelLoaded(sl.subLevelId())) {
+					Vec3 plot = sli.worldToPlot(sl.subLevelId(), src.worldPos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
+					fixed = new RopeBend(src.space, src.worldPos,
+							new Vec(plot.x, plot.y, plot.z), src.topSide, src.bottomSide);
+				}
+			} else if (src.space instanceof AnchorSpace.Contraption c) {
+				Entity host = this.world.getEntity(c.entityId());
+				if (host != null && host.isAlive()) {
+					Vec3 local = GrappleModIntegrations.getContraptionIntegration()
+							.worldToLocal(host, src.worldPos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
+					fixed = new RopeBend(src.space, src.worldPos,
+							new Vec(local.x, local.y, local.z), src.topSide, src.bottomSide);
+				}
+			}
+			this.bends.add(fixed);
+		}
 	}
 
 
@@ -254,10 +284,29 @@ public class RopeSegmentHandler {
 			} else break;
 		}
 
-		// Rope-length overflow — eject farthest bends until the rope fits.
+		// Rope-length overflow — eject farthest WORLD bends until the rope fits.
+		// Non-WORLD bends (contraption / sub-level) are skipped: ejecting one lets
+		// the rope snap through the moving host, then movingHostSweep re-inserts
+		// it next tick, oscillating every tick and causing the rope to visibly
+		// spasm. The hard length constraint is still enforced by
+		// GrapplinghookEntity.handleHookPhysics, which yanks the hook position to
+		// keep total rope-path length ≤ ropeLen even if we don't eject here.
 		while (this.bends.size() > 2 && this.getDistToFarthest() > this.ropeLen) {
+			if (!(this.bends.get(1).space instanceof AnchorSpace.World)) break;
 			this.removeSegment(1);
 		}
+	}
+
+	/** Returns the unqualified method name of our closest interesting caller. */
+	private static String callerTag() {
+		StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+		for (int i = 3; i < Math.min(stack.length, 10); i++) {
+			String m = stack[i].getMethodName();
+			if (m.equals("removeSegment") || m.equals("addBend") || m.equals("actuallyAddSegment")
+					|| m.equals("callerTag") || m.equals("<init>")) continue;
+			return m;
+		}
+		return "?";
 	}
 
 	/**
@@ -303,6 +352,19 @@ public class RopeSegmentHandler {
 				}
 				Vec3 newWorld = GrappleModIntegrations.getContraptionIntegration()
 						.localToWorld(host, bend.nativePos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
+				// Sanity check: if the refreshed world pos is wildly far from the
+				// previous world pos, something went wrong (entity ID reuse, a
+				// Sable-backed Create contraption whose toGlobalVector returns plot
+				// coords, pose mid-teardown, etc.). Log + drop so we don't propagate
+				// garbage coords into distToAnchor and trip client rope-snap.
+				double jumpSq = newWorld.distanceToSqr(bend.worldPos.toVec3d());
+				if (jumpSq > 64 * 64) {
+					GrappleMod.LOGGER.warn("[HookDbg] BAD CONTRAPTION REFRESH entityId={} class={} hostPos={} native={} oldWorld={} newWorld={} jump={}m — dropping bend",
+							c.entityId(), host.getClass().getName(), host.position(),
+							bend.nativePos, bend.worldPos, newWorld, Math.sqrt(jumpSq));
+					this.removeSegment(i);
+					continue;
+				}
 				bend.worldPos = new Vec(newWorld.x, newWorld.y, newWorld.z);
 			} else if (bend.space instanceof AnchorSpace.SubLevel sl) {
 				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
@@ -311,6 +373,19 @@ public class RopeSegmentHandler {
 					continue;
 				}
 				Vec3 newWorld = sli.plotToWorld(sl.subLevelId(), bend.nativePos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
+				// Sanity check: same reasoning as the contraption branch above. If
+				// plotToWorld returns a point wildly far from the previous world
+				// position, something is mid-teardown / mid-resync (common on the
+				// client at the moment a sub-level attach packet arrives before
+				// the sub-level's pose has been tracked). Drop the bend rather
+				// than propagate plot-space garbage into the rope.
+				double jumpSq = newWorld.distanceToSqr(bend.worldPos.toVec3d());
+				if (jumpSq > 64 * 64) {
+					GrappleMod.LOGGER.warn("[HookDbg] BAD SUBLEVEL REFRESH uuid={} native={} oldWorld={} newWorld={} jump={}m — dropping bend",
+							sl.subLevelId(), bend.nativePos, bend.worldPos, newWorld, Math.sqrt(jumpSq));
+					this.removeSegment(i);
+					continue;
+				}
 				bend.worldPos = new Vec(newWorld.x, newWorld.y, newWorld.z);
 			}
 		}
@@ -523,6 +598,12 @@ public class RopeSegmentHandler {
 		Entity entity = this.world.getEntity(c.entityId());
 		if (entity == null) return null;
 
+		// One-shot log at insertion: what class is this "contraption" entity?
+		// Helps distinguish a plain Create contraption from a Create: Aeronautics
+		// / Sable-backed subclass whose toGlobalVector may return plot-space coords.
+		GrappleMod.LOGGER.info("[HookDbg] insertContraptionBend entityId={} class={} hostPos={} worldBendPos={} nativeHit={}",
+				c.entityId(), entity.getClass().getName(), entity.position(), worldBendPos, hit.worldHit());
+
 		// Jitter-dedup: skip if an adjacent bend on the same contraption is already
 		// near this position. Prevents per-tick bend accumulation when the host
 		// pose drifts slightly and the rope raycast keeps clipping the same face.
@@ -691,6 +772,11 @@ public class RopeSegmentHandler {
 	}
 
 	public void removeSegment(int index) {
+		if (!this.world.isClientSide && index < this.bends.size()) {
+			RopeBend removed = this.bends.get(index);
+			GrappleMod.LOGGER.info("[HookDbg] removeSegment idx={} size->{} space={} worldPos={} caller={}",
+					index, this.bends.size() - 1, removed.space, removed.worldPos, callerTag());
+		}
 		this.removeSegmentAt(index);
 
 		if (!this.world.isClientSide) {
@@ -852,6 +938,10 @@ public class RopeSegmentHandler {
 	 * the client-side network receiver when applying an incremental update.
 	 */
 	public void addBend(int index, RopeBend bend) {
+		if (!this.world.isClientSide) {
+			GrappleMod.LOGGER.info("[HookDbg] addBend    idx={} size->{} space={} worldPos={} native={} top={} bot={} caller={}",
+					index, this.bends.size() + 1, bend.space, bend.worldPos, bend.nativePos, bend.topSide, bend.bottomSide, callerTag());
+		}
 		this.bends.add(index, bend);
 
 		if (!this.world.isClientSide) {
@@ -875,9 +965,20 @@ public class RopeSegmentHandler {
 
 	public BlockPos getBendBlock(int index) {
 		RopeBend bend = this.bends.get(index);
-		Vec bendpos = bend.worldPos;
-		bendpos.mutableAdd(this.getNormal(bend.bottomSide).withMagnitude(-INTO_BLOCK * 2));
-		bendpos.mutableAdd(this.getNormal(bend.topSide).withMagnitude(-INTO_BLOCK * 2));
+		// Local copy — the old code called mutableAdd on bend.worldPos directly,
+		// quietly corrupting the bend's stored position. worldPos is refreshed
+		// each tick for moving-host bends, masking the bug, but it still mattered
+		// for static WORLD bends that never get re-written.
+		Vec bendpos = new Vec(bend.worldPos);
+		// Both sides may be null for face-contact CONTRAPTION / SUBLEVEL bends —
+		// they intentionally skip the plane-test unwrap and store only the hit
+		// face in bottomSide (topSide null). Guard so callers that reach for the
+		// attach block on such a bend don't NPE. For WORLD bends v1 behavior
+		// is preserved (both sides set; both offsets applied).
+		if (bend.bottomSide != null)
+			bendpos.mutableAdd(this.getNormal(bend.bottomSide).withMagnitude(-INTO_BLOCK * 2));
+		if (bend.topSide != null)
+			bendpos.mutableAdd(this.getNormal(bend.topSide).withMagnitude(-INTO_BLOCK * 2));
 		return BlockPos.containing(bendpos.toVec3d());
 	}
 

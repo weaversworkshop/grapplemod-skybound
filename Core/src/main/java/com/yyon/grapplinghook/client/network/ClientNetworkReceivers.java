@@ -118,13 +118,34 @@ public final class ClientNetworkReceivers {
         if (grapple instanceof GrapplinghookEntity hookEntity) {
             RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
             if (payload.shouldAdd()) {
-                // Wire carries the server-resolved world-space position. For non-WORLD
-                // bends, nativePos will be reconciled on the next tick refresh via the
-                // owning integration — matching the convention in RopeSnapshot.fromWire.
+                // Wire carries only the server-resolved worldPos. For non-WORLD
+                // bends we must reconstruct nativePos via the owning integration's
+                // inverse transform — otherwise refreshWorldCoords on the next
+                // tick feeds world coords into plotToWorld/localToWorld and
+                // produces huge garbage coordinates that trip the client rope-snap.
+                com.yyon.grapplinghook.util.Vec worldPos = payload.pos();
+                com.yyon.grapplinghook.util.Vec nativePos = worldPos;
+                if (payload.space() instanceof com.yyon.grapplinghook.physics.AnchorSpace.SubLevel sl) {
+                    com.yyon.grapplinghook.integration.SubLevelIntegration sli =
+                            com.yyon.grapplinghook.integration.GrappleModIntegrations.getSubLevelIntegration();
+                    if (sli.isSubLevelLoaded(sl.subLevelId())) {
+                        net.minecraft.world.phys.Vec3 plot = sli.worldToPlot(
+                                sl.subLevelId(), worldPos.toVec3d(), 1.0f);
+                        nativePos = new com.yyon.grapplinghook.util.Vec(plot.x, plot.y, plot.z);
+                    }
+                } else if (payload.space() instanceof com.yyon.grapplinghook.physics.AnchorSpace.Contraption c) {
+                    Entity host = world.getEntity(c.entityId());
+                    if (host != null && host.isAlive()) {
+                        net.minecraft.world.phys.Vec3 local = com.yyon.grapplinghook.integration.GrappleModIntegrations
+                                .getContraptionIntegration()
+                                .worldToLocal(host, worldPos.toVec3d(), 1.0f);
+                        nativePos = new com.yyon.grapplinghook.util.Vec(local.x, local.y, local.z);
+                    }
+                }
                 com.yyon.grapplinghook.physics.RopeBend bend = new com.yyon.grapplinghook.physics.RopeBend(
                         payload.space(),
-                        payload.pos(),
-                        payload.pos(),
+                        worldPos,
+                        nativePos,
                         payload.topFacing().toVanilla(),
                         payload.bottomFacing().toVanilla());
                 segmentHandler.addBend(payload.index(), bend);

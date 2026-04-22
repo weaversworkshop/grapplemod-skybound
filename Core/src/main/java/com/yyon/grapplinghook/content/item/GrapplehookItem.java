@@ -548,6 +548,9 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		if (hookMainHand != null) hookMainHand.removeServer();
 
 		int id = thrower.getId();
+		com.yyon.grapplinghook.GrappleMod.LOGGER.info("[HookDbg] detachBoth thrower={} caller={}",
+				id,
+				Thread.currentThread().getStackTrace()[2].getMethodName());
 		GrappleModServerEvents.HOOK_RETRACT.invoker().onHookRetracted(thrower);
 		GrappleModUtils.sendToCorrectClient(new GrappleDetachS2CPayload(id), thrower.getId(), thrower.level());
 	}
@@ -630,6 +633,12 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 	public GrapplinghookEntity createGrapplehookEntity(ItemStack stack, Level worldIn, LivingEntity entityLiving, boolean isMainHand, boolean isDoublePair) {
 		GrapplinghookEntity hookEntity = new GrapplinghookEntity(worldIn, entityLiving, isMainHand, this.getCustomizationsOrDefault(stack), isDoublePair);
 		ServerHookEntityTracker.addGrappleEntity(entityLiving, hookEntity);
+		com.yyon.grapplinghook.GrappleMod.LOGGER.info("[HookDbg] THROW shooter={} side={} hookId={} pos={} mainHand={}",
+				entityLiving.getId(),
+				worldIn.isClientSide ? "C" : "S",
+				hookEntity.getId(),
+				hookEntity.position(),
+				isMainHand);
 		return hookEntity;
 	}
 
