@@ -91,14 +91,9 @@ public final class MultiSpaceRaycaster {
         if (GrappleModIntegrations.hasContraptionIntegration()) {
             AABB searchBox = new AABB(rayStart.toVec3d(), rayEnd.toVec3d()).inflate(CONTRAPTION_BROAD_PHASE_INFLATE);
             List<Entity> contraptions = level.getEntities(context, searchBox, ci::isContraption);
-            com.yyon.grapplinghook.GrappleMod.LOGGER.info("[RopeDebug-mscast] side={} candidates={} rayLen={}",
-                    level.isClientSide ? "CLIENT" : "SERVER", contraptions.size(),
-                    String.format("%.2f", rayEnd.toVec3d().distanceTo(rayStart.toVec3d())));
             for (Entity contraption : contraptions) {
                 ContraptionIntegration.ContraptionRaycastHit hit = ci.raycastContraptionDetailed(
                         contraption, rayStart.toVec3d(), rayEnd.toVec3d(), partialTicks);
-                com.yyon.grapplinghook.GrappleMod.LOGGER.info("[RopeDebug-mscast]   contraption id={} hit={}",
-                        contraption.getId(), hit == null ? "null" : "YES");
                 if (hit == null) continue;
                 double distSq = hit.worldHit().distanceToSqr(rayStart.toVec3d());
                 if (distSq < closestDistSq) {

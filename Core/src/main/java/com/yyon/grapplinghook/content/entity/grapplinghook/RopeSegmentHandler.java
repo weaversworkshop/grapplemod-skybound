@@ -161,21 +161,26 @@ public class RopeSegmentHandler {
 
 		if (useLegacy) {
 			// True v1 path for WORLD bends: plane-test unwrap + corner-hunting
-			// wrap, once. Plus a non-WORLD bend cleanup pass so CONTRAPTION bends
-			// (which the plane test skips — they have null topSide) still get
-			// removed when no longer needed. The legacyRopeWrap flag controls the
-			// *wrap placement algorithm*, not which spaces the rope can hit, so
-			// contraption collision must remain functional here.
+			// wrap, once. Plus two non-WORLD augmentations so contraption/sub-level
+			// collision works in legacy mode: a cleanup pass (for bends whose host
+			// no longer crosses their segment) and a moving-host sweep over every
+			// rope segment (v1's wrap pass only checks endpoint-adjacent segments,
+			// which misses contraptions passing through middle segments between
+			// existing wraps). The legacyRopeWrap flag controls the *wrap placement
+			// algorithm*, not which spaces the rope can hit.
 			this.unwrapPass(hookpos, playerpos, movinghook);
 			this.nonWorldBendCleanup();
+			this.movingHostSweep();
 			this.wrapPassLegacy(hookpos, playerpos, movinghook);
 		} else {
 			// Surface-algorithm convergence loop: plane-test unwrap + redundant
-			// sweep + surface wrap, iterated until the bend list stops changing.
+			// sweep + moving-host sweep + surface wrap, iterated until the bend
+			// list stops changing.
 			for (int iter = 0; iter < MAX_ITERS; iter++) {
 				int before = this.bends.size();
 				this.unwrapPass(hookpos, playerpos, movinghook);
 				this.redundantBendSweep();
+				this.movingHostSweep();
 				this.wrapPassSurface(hookpos, playerpos, movinghook);
 				if (this.bends.size() == before) break;
 				if (iter == MAX_ITERS - 1) {
@@ -283,7 +288,6 @@ public class RopeSegmentHandler {
 			if (bend.space instanceof AnchorSpace.Contraption c) {
 				Entity host = this.world.getEntity(c.entityId());
 				if (host == null || !host.isAlive()) {
-					GrappleMod.LOGGER.info("[RopeDebug-refresh] dropping bend: host entity id={} gone", c.entityId());
 					this.removeSegment(i);
 					continue;
 				}
@@ -320,9 +324,44 @@ public class RopeSegmentHandler {
 				next = next.sub(unit.scale(shrink));
 			}
 			if (MultiSpaceRaycaster.raycast(this.hookEntity, this.world, prev, next, CONTRAPTION_PARTIAL_TICKS) == null) {
-				GrappleMod.LOGGER.info("[RopeDebug-cleanup] dropping non-WORLD bend at i={} (neighbors cleared)", i);
 				this.removeSegment(i);
 			}
+		}
+	}
+
+	/**
+	 * Moving-host sweep — raycast every rope segment for CONTRAPTION (and later
+	 * SUBLEVEL) hits, inserting face-contact bends wherever a moving host crosses
+	 * a segment. Fills a gap in the endpoint-only wrap pass: v1's assumption that
+	 * middle segments sit between fixed neighbors with static geometry holds for
+	 * world blocks but not for moving contraptions, which can sweep through any
+	 * segment — including the hook↔middle-bend span when the hook is anchored to
+	 * a static block and the player has wrapped the rope somewhere else.
+	 *
+	 * <p>Only inserts non-WORLD bends here. World-block wraps still go through
+	 * the endpoint-adjacent wrap pass so the v1 corner-hunting / surface-walking
+	 * algorithms remain the authoritative path for static geometry.</p>
+	 *
+	 * <p>Early-outs when no contraption integration is registered so vanilla
+	 * gameplay pays nothing for this pass.</p>
+	 */
+	private void movingHostSweep() {
+		if (!GrappleModIntegrations.hasContraptionIntegration()) return;
+		int i = 1;
+		while (i < this.bends.size()) {
+			Vec top = this.bends.get(i - 1).worldPos;
+			Vec bot = this.bends.get(i).worldPos;
+			MultiSpaceRaycaster.MultiSpaceHit hit = MultiSpaceRaycaster.raycast(
+					this.hookEntity, this.world, bot, top, CONTRAPTION_PARTIAL_TICKS);
+			if (hit != null && hit.space() instanceof AnchorSpace.Contraption c) {
+				Vec inserted = insertContraptionBend(top, bot, i, hit, c);
+				if (inserted != null) {
+					// A new bend took index i; advance past it so we don't
+					// immediately re-examine the same sub-segment.
+					i++;
+				}
+			}
+			i++;
 		}
 	}
 
@@ -486,12 +525,6 @@ public class RopeSegmentHandler {
 		// the rope would phase through the contraption.
 
 		this.addBend(index, RopeBend.contraption(c.entityId(), nativePos, worldBendPos, null, face));
-		GrappleMod.LOGGER.info("[RopeDebug-place] bend at i={} worldPos=({},{},{}) bends.size now={}",
-				index,
-				String.format("%.2f", worldBendPos.x),
-				String.format("%.2f", worldBendPos.y),
-				String.format("%.2f", worldBendPos.z),
-				this.bends.size());
 		return worldBendPos;
 	}
 
@@ -552,17 +585,12 @@ public class RopeSegmentHandler {
 		// placement, not which spaces the rope can collide with.
 		MultiSpaceRaycaster.MultiSpaceHit msHit = MultiSpaceRaycaster.raycast(
 				this.hookEntity, this.world, bottom, top, CONTRAPTION_PARTIAL_TICKS);
-		GrappleMod.LOGGER.info("[RopeDebug-legacy] side={} msHit={} hasCI={}",
-				this.world.isClientSide ? "CLIENT" : "SERVER",
-				msHit == null ? "null" : msHit.space().getClass().getSimpleName(),
-				GrappleModIntegrations.hasContraptionIntegration());
 		if (msHit == null) return;
 
 		// CONTRAPTION hit — place a simple face-contact bend (no corner-hunt).
 		// Contraption blocks rotate per tick so there are no stable world edges to
 		// wrap; we just anchor to the hit face in the contraption's local frame.
 		if (msHit.space() instanceof AnchorSpace.Contraption c) {
-			GrappleMod.LOGGER.info("[RopeDebug-legacy] CONTRAPTION hit, placing bend");
 			insertContraptionBend(top, bottom, index, msHit, c);
 			return;
 		}
