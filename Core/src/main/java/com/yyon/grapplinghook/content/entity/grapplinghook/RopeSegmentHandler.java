@@ -7,11 +7,13 @@ import com.yyon.grapplinghook.network.clientbound.RopeSegmentUpdateS2CPayload;
 import com.yyon.grapplinghook.physics.AnchorSpace;
 import com.yyon.grapplinghook.physics.RopeBend;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import com.yyon.grapplinghook.physics.raycast.MultiSpaceRaycaster;
+import com.yyon.grapplinghook.physics.raycast.PlotSpaceEdgeWrap;
 import com.yyon.grapplinghook.physics.raycast.WrapEdgeFinder;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.NullableDirection;
@@ -162,15 +164,17 @@ public class RopeSegmentHandler {
 
 		if (useLegacy) {
 			// True v1 path for WORLD bends: plane-test unwrap + corner-hunting
-			// wrap, once. Plus two non-WORLD augmentations so contraption/sub-level
-			// collision works in legacy mode: a cleanup pass (for bends whose host
-			// no longer crosses their segment) and a moving-host sweep over every
-			// rope segment (v1's wrap pass only checks endpoint-adjacent segments,
-			// which misses contraptions passing through middle segments between
-			// existing wraps). The legacyRopeWrap flag controls the *wrap placement
-			// algorithm*, not which spaces the rope can hit.
+			// wrap, once. Plus two augmentations so moving-host collision works:
+			// a raycast-based redundant sweep (drops bends whose prev→next straight
+			// line is clear — vital for moving-host scenarios because the plane test
+			// only catches endpoint-adjacent unwraps; middle bends can go stale as
+			// the hook drags around) and a moving-host sweep over every segment
+			// (v1's wrap pass only checks endpoint-adjacent segments, which misses
+			// contraptions/sub-levels passing through middle segments). The
+			// legacyRopeWrap flag controls the *wrap placement algorithm*, not which
+			// spaces the rope can hit nor which cleanup passes run.
 			this.unwrapPass(hookpos, playerpos, movinghook);
-			this.nonWorldBendCleanup();
+			this.redundantBendSweep();
 			this.movingHostSweep();
 			this.wrapPassLegacy(hookpos, playerpos, movinghook);
 		} else {
@@ -257,15 +261,20 @@ public class RopeSegmentHandler {
 	}
 
 	/**
-	 * Surface-algorithm-only redundant-bend sweep — for each middle bend, raycast
-	 * from its previous neighbor to its next neighbor; if the line is clear the
-	 * bend is unnecessary (removing it can't re-introduce an intersection since
-	 * we just verified there isn't one) and gets dropped. This catches "stuck"
-	 * middle bends that the plane test never reaches (plane test only looks at
+	 * Raycast-based redundant-bend sweep — for each middle bend, raycast from
+	 * its previous neighbor to its next neighbor; if the line is clear the bend
+	 * is unnecessary (removing it can't re-introduce an intersection since we
+	 * just verified there isn't one) and gets dropped. Catches "stuck" middle
+	 * bends that the plane test never reaches (plane test only looks at
 	 * endpoint-adjacent bends).
 	 *
-	 * <p><b>Not part of v1.</b> Kept out of {@link #unwrapPass} so that the
-	 * {@code legacyRopeWrap=true} path matches v1 exactly.</p>
+	 * <p>Runs in both legacy and surface paths. On a <em>static</em> world with
+	 * a <em>static</em> hook (pure vanilla) this is a no-op — the raycast that
+	 * placed the bend still hits the same block, so no spurious removes. But
+	 * when the hook is on a moving host (entity / contraption / sub-level), the
+	 * hook endpoint moves each tick and middle WORLD bends can legitimately go
+	 * stale — this pass cleans them up. For CONTRAPTION / SUBLEVEL bends it
+	 * also drops them when the host moves out of the rope path.</p>
 	 */
 	/**
 	 * Per-tick refresh of world positions for bends anchored to moving hosts
@@ -303,36 +312,6 @@ public class RopeSegmentHandler {
 				}
 				Vec3 newWorld = sli.plotToWorld(sl.subLevelId(), bend.nativePos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
 				bend.worldPos = new Vec(newWorld.x, newWorld.y, newWorld.z);
-			}
-		}
-	}
-
-	/**
-	 * Cleanup pass that only considers non-WORLD bends (CONTRAPTION today,
-	 * SUBLEVEL in Phase 3). For each such middle bend, raycasts between its
-	 * neighbors; if the line is clear in *every* space the bend is unnecessary.
-	 * Safe to run in the legacy wrap path because it never touches WORLD bends —
-	 * legacy's v1-faithful behavior for world wraps is preserved.
-	 */
-	private void nonWorldBendCleanup() {
-		for (int i = this.bends.size() - 2; i >= 1; i--) {
-			if (this.bends.size() <= 2) break;
-			if (i >= this.bends.size() - 1) continue;
-			RopeBend bend = this.bends.get(i);
-			if (bend.space instanceof AnchorSpace.World) continue;
-
-			Vec prev = this.bends.get(i - 1).worldPos;
-			Vec next = this.bends.get(i + 1).worldPos;
-			Vec direction = next.sub(prev);
-			double length = direction.length();
-			if (length > 0.02) {
-				double shrink = Math.min(SHRINK_MARGIN, length * 0.1);
-				Vec unit = direction.scale(1.0 / length);
-				prev = prev.add(unit.scale(shrink));
-				next = next.sub(unit.scale(shrink));
-			}
-			if (MultiSpaceRaycaster.raycast(this.hookEntity, this.world, prev, next, CONTRAPTION_PARTIAL_TICKS) == null) {
-				this.removeSegment(i);
 			}
 		}
 	}
@@ -378,9 +357,21 @@ public class RopeSegmentHandler {
 	}
 
 	private void redundantBendSweep() {
+		boolean hookOnMovingHost = this.hookEntity.isAttachedToMovingBody();
 		for (int i = this.bends.size() - 2; i >= 1; i--) {
 			if (this.bends.size() <= 2) break;
 			if (i >= this.bends.size() - 1) continue;
+			RopeBend bend = this.bends.get(i);
+			// WORLD bends on a static anchor are governed exclusively by v1's
+			// plane-test unwrap — raycast removal fires slightly earlier (as soon
+			// as the straight line clears the block) and breaks the "wrap sticks
+			// as the player walks past a pole" expectation. Only raycast-clean
+			// WORLD bends when the hook is on a moving host, because then the
+			// plane test alone misses stale bends (endpoints move each tick).
+			// Non-WORLD bends always go through the raycast sweep since they
+			// skip the plane test entirely (topSide is null).
+			if (bend.space instanceof AnchorSpace.World && !hookOnMovingHost) continue;
+
 			Vec prev = this.bends.get(i - 1).worldPos;
 			Vec next = this.bends.get(i + 1).worldPos;
 			// Shrink endpoints so a ray grazing at the bend offset doesn't report
@@ -393,10 +384,6 @@ public class RopeSegmentHandler {
 				prev = prev.add(unit.scale(shrink));
 				next = next.sub(unit.scale(shrink));
 			}
-			// Multi-space redundant check: if NEITHER vanilla blocks NOR any
-			// contraption lies on the straight line between neighbors, the bend is
-			// geometrically unnecessary. Drops CONTRAPTION bends correctly once the
-			// rope can pass through without them.
 			if (MultiSpaceRaycaster.raycast(this.hookEntity, this.world, prev, next, CONTRAPTION_PARTIAL_TICKS) == null) {
 				this.removeSegment(i);
 			}
@@ -535,6 +522,15 @@ public class RopeSegmentHandler {
 
 		Entity entity = this.world.getEntity(c.entityId());
 		if (entity == null) return null;
+
+		// Jitter-dedup: skip if an adjacent bend on the same contraption is already
+		// near this position. Prevents per-tick bend accumulation when the host
+		// pose drifts slightly and the rope raycast keeps clipping the same face.
+		if (isCloseMovingHostBend(index - 1, c, worldBendPos)
+				|| isCloseMovingHostBend(index, c, worldBendPos)) {
+			return null;
+		}
+
 		Vec3 nativeLocal = GrappleModIntegrations.getContraptionIntegration()
 				.worldToLocal(entity, worldBendPos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
 		Vec nativePos = new Vec(nativeLocal.x, nativeLocal.y, nativeLocal.z);
@@ -561,19 +557,84 @@ public class RopeSegmentHandler {
 	 */
 	private Vec insertSubLevelBend(Vec top, Vec bottom, int index,
 	                               MultiSpaceRaycaster.MultiSpaceHit hit, AnchorSpace.SubLevel sl) {
-		Direction face = hit.face();
-		Vec worldBendPos = new Vec(
-				hit.worldHit().x + face.getStepX() * CONTRAPTION_BEND_OFFSET,
-				hit.worldHit().y + face.getStepY() * CONTRAPTION_BEND_OFFSET,
-				hit.worldHit().z + face.getStepZ() * CONTRAPTION_BEND_OFFSET);
-
 		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
 		if (!sli.isSubLevelLoaded(sl.subLevelId())) return null;
-		Vec3 plotPoint = sli.worldToPlot(sl.subLevelId(), worldBendPos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
-		Vec nativePos = new Vec(plotPoint.x, plotPoint.y, plotPoint.z);
 
+		Direction face = hit.face();
+		BlockPos plotBlock = hit.nativeBlock();
+		Vec3 plotHit = hit.nativeHit();
+		Vec3 plotBendPos;
+
+		// Prefer edge-wrap placement: bend sits on the hit block's wrap edge with
+		// outward offsets along both adjacent faces. This lets the rope genuinely
+		// coil around pole-like shapes on rotating sub-levels instead of pivoting
+		// around a single face anchor. Falls back to face-contact if the integration
+		// didn't provide a plot-block or the geometry degenerates (ray perpendicular
+		// to face with no flat direction).
+		if (plotBlock != null) {
+			Vec3 plotRayEnd = sli.worldToPlot(sl.subLevelId(), top.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
+			PlotSpaceEdgeWrap.Result wrap = PlotSpaceEdgeWrap.findWrap(plotBlock, face, plotHit, plotRayEnd);
+			if (wrap != null) {
+				plotBendPos = wrap.plotBendPos();
+			} else {
+				plotBendPos = plotHit.add(
+						face.getStepX() * SUBLEVEL_BEND_OFFSET,
+						face.getStepY() * SUBLEVEL_BEND_OFFSET,
+						face.getStepZ() * SUBLEVEL_BEND_OFFSET);
+			}
+		} else {
+			plotBendPos = plotHit.add(
+					face.getStepX() * SUBLEVEL_BEND_OFFSET,
+					face.getStepY() * SUBLEVEL_BEND_OFFSET,
+					face.getStepZ() * SUBLEVEL_BEND_OFFSET);
+		}
+
+		Vec3 worldBend = sli.plotToWorld(sl.subLevelId(), plotBendPos, CONTRAPTION_PARTIAL_TICKS);
+		Vec worldBendPos = new Vec(worldBend.x, worldBend.y, worldBend.z);
+		Vec nativePos = new Vec(plotBendPos.x, plotBendPos.y, plotBendPos.z);
+
+		// Jitter-dedup: skip if an adjacent bend on the same sub-level is already
+		// near this position. Sub-level pose updates can nudge the rope by fractions
+		// of a block each tick; without dedup, movingHostSweep would insert a
+		// near-identical bend every tick on the same face, eating rope length and
+		// yanking the player in.
+		if (isCloseMovingHostBend(index - 1, sl, worldBendPos)
+				|| isCloseMovingHostBend(index, sl, worldBendPos)) {
+			return null;
+		}
+		// Guard against stacking on the hook's own attachment block: if the hook
+		// is anchored to this sub-level's hit block, any "bend" we'd place there
+		// is really just the hook's own position, not a real wrap.
+		if (index == 1 && hookAttachedToSubLevelBlock(sl.subLevelId(), plotBlock)) {
+			return null;
+		}
+
+		// topSide kept null: the stored face Direction is in world-space-at-placement,
+		// which goes stale under rotation — having the plane-test unwrap operate on
+		// it would misfire. The raycast-based redundantBendSweep handles removal
+		// instead. See project_v2_rope_rotation_limitation.md.
 		this.addBend(index, RopeBend.subLevel(sl.subLevelId(), nativePos, worldBendPos, null, face));
 		return worldBendPos;
+	}
+
+	/**
+	 * True if the bend at {@code index} is on the same moving host as {@code space}
+	 * and within {@link #MOVING_HOST_DEDUP_RADIUS} of {@code candidateWorldPos}.
+	 * Used to reject jitter-driven duplicate bend insertions.
+	 */
+	private boolean isCloseMovingHostBend(int index, AnchorSpace space, Vec candidateWorldPos) {
+		if (index < 0 || index >= this.bends.size()) return false;
+		RopeBend bend = this.bends.get(index);
+		if (!bend.space.equals(space)) return false;
+		return bend.worldPos.sub(candidateWorldPos).length() < MOVING_HOST_DEDUP_RADIUS;
+	}
+
+	/** True if the hook is anchored to the given plot block on the given sub-level. */
+	private boolean hookAttachedToSubLevelBlock(java.util.UUID subLevelId, BlockPos plotBlock) {
+		if (plotBlock == null) return false;
+		return this.hookEntity.attachment() instanceof HookAttachment.SubLevelBlock slb
+				&& slb.subLevelId().equals(subLevelId)
+				&& slb.plotBlock().equals(plotBlock);
 	}
 
 	private boolean isMicroBend(Vec a, Vec b, Vec c) {
@@ -587,6 +648,29 @@ public class RopeSegmentHandler {
 
 	/** Outward offset from a contraption-block face where the bend sits. Matches {@code WrapEdgeFinder.BEND_OFFSET}. */
 	private static final double CONTRAPTION_BEND_OFFSET = 0.08;
+
+	/**
+	 * Radius (world-space blocks) under which two bends on the same moving host
+	 * are considered duplicates. A moving host's pose can shift sub-block amounts
+	 * each tick (Create pose interpolation, Sable network-ticked poses) — the
+	 * rope raycast catches those micro-motions and would insert a fresh near-
+	 * identical bend every tick without dedup. At 0.6 blocks this catches
+	 * same-edge / same-face stacking but still allows legitimate adjacent-edge
+	 * bends (face widths are 1 block apart) that appear when the rope actually
+	 * coils around a corner.
+	 */
+	private static final double MOVING_HOST_DEDUP_RADIUS = 0.6;
+
+	/**
+	 * Outward offset for SUBLEVEL bends. Larger than {@link #CONTRAPTION_BEND_OFFSET}
+	 * because sub-levels commonly rotate (airships, turrets, etc.), and a bend
+	 * placed right against the face is easily pushed back inside the block by the
+	 * next tick's rotation. A bigger offset buys the rope some clearance so the
+	 * bend survives through rotation. Edge-wrap placement (follow-up) will reduce
+	 * the role of this offset, but a non-trivial value is still useful as a safety
+	 * margin on face-contact fallbacks.
+	 */
+	private static final double SUBLEVEL_BEND_OFFSET = 0.18;
 
 	/**
 	 * Guard against adding the same bend twice — mirrors the legacy algorithm's

@@ -191,7 +191,7 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         // Aeronautics case) this is identical to world-space, so we pass it
         // through untransformed. See project_v2_rope_rotation_limitation.md —
         // rotated sub-levels need pose.transformDirection (future SPI work).
-        return new SubLevelRaycastHit(worldHit, hit.face, plotEntry);
+        return new SubLevelRaycastHit(worldHit, hit.face, plotEntry, hit.pos);
     }
 
     private record VoxelHit(BlockPos pos, Direction face) {}
@@ -357,8 +357,11 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
                 z += stepZ; tMaxZ += tDeltaZ;
                 entryFace = stepZ > 0 ? Direction.NORTH : Direction.SOUTH;
             }
-
-            if (tMaxX > 1 && tMaxY > 1 && tMaxZ > 1) return null;
+            // No tMax-based early exit: it preempts the next iteration's check of
+            // the end voxel, which is often the block we need to hit (e.g. sable
+            // on the far side of a rope attached to a world block). The endX/Y/Z
+            // check above is the correct termination; the 256 iter cap bounds
+            // degenerate rays.
         }
         return null;
     }
@@ -403,8 +406,7 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
             if (tMaxX < tMaxY && tMaxX < tMaxZ) { x += stepX; tMaxX += tDeltaX; }
             else if (tMaxY < tMaxZ)             { y += stepY; tMaxY += tDeltaY; }
             else                                 { z += stepZ; tMaxZ += tDeltaZ; }
-
-            if (tMaxX > 1 && tMaxY > 1 && tMaxZ > 1) return null;
+            // See voxelTraverseDetailed: no tMax early-exit (would skip the end voxel).
         }
         return null;
     }

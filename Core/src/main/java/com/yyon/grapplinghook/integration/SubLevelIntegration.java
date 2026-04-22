@@ -54,24 +54,29 @@ public interface SubLevelIntegration {
 
     /**
      * Detailed per-block raycast — same as {@link #raycastSubLevel} but also
-     * returns the face direction struck and the plot-space hit position. Used
-     * by the multi-space rope raycast so a SUBLEVEL bend can be stored with
-     * its native coordinates (for per-tick {@code plotToWorld} refresh) and
-     * the face it's anchored against (for unwrap plane geometry).
+     * returns the face direction struck, the plot-space hit position, and the
+     * plot-space block the hit happened in. Used by the multi-space rope
+     * raycast so a SUBLEVEL bend can be stored with its native coordinates
+     * (for per-tick {@code plotToWorld} refresh), the face it's anchored
+     * against, and — for edge-wrap placement — the hit block's AABB.
      *
      * <p>Default implementation returns {@code null} for SPIs that haven't yet
      * implemented the detailed variant — rope bends will not be placed on
      * those sub-levels, but the old {@link #raycastSubLevel} path still works
      * for the flight-phase hook.</p>
      *
-     * @param worldHit apparent world-space hit point (same as {@link #raycastSubLevel})
-     * @param face     world-space face direction at time of hit. Note: the
-     *                 face is captured at placement — if the sub-level rotates
-     *                 after the bend is placed, the stored Direction will not
-     *                 track the rotation (see project_v2_rope_rotation_limitation.md).
-     * @param plotHit  hit point in the sub-level's plot-space coords
+     * @param worldHit  apparent world-space hit point (same as {@link #raycastSubLevel})
+     * @param face      world-space face direction at time of hit. Note: the
+     *                  face is captured at placement — if the sub-level rotates
+     *                  after the bend is placed, the stored Direction will not
+     *                  track the rotation (see project_v2_rope_rotation_limitation.md).
+     * @param plotHit   hit point in the sub-level's plot-space coords
+     * @param plotBlock plot-space {@link BlockPos} of the block struck. Its AABB
+     *                  is {@code [plotBlock, plotBlock + (1,1,1)]} in plot coords.
+     *                  Used by Core for edge-wrap bend placement so ropes coil
+     *                  around poles/edges instead of anchoring on face-centers.
      */
-    record SubLevelRaycastHit(Vec3 worldHit, Direction face, Vec3 plotHit) {}
+    record SubLevelRaycastHit(Vec3 worldHit, Direction face, Vec3 plotHit, BlockPos plotBlock) {}
 
     default @Nullable SubLevelRaycastHit raycastSubLevelDetailed(UUID subLevelId, Vec3 rayStart, Vec3 rayEnd, float partialTicks) {
         return null;

@@ -6,6 +6,7 @@ import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.physics.AnchorSpace;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
@@ -36,15 +37,20 @@ public final class MultiSpaceRaycaster {
     /**
      * Union type for a raycast that resolved in any of the supported spaces.
      *
-     * @param worldHit  world-space hit location
-     * @param face      outward-pointing face direction struck
-     * @param space     which space the hit was resolved in (drives how a resulting
-     *                  rope bend is stored / refreshed per tick)
-     * @param nativeHit position in the hit space's native coordinates — equals
-     *                  {@code worldHit} for {@link AnchorSpace.World}, else the
-     *                  contraption-local / plot-space point
+     * @param worldHit   world-space hit location
+     * @param face       outward-pointing face direction struck
+     * @param space      which space the hit was resolved in (drives how a resulting
+     *                   rope bend is stored / refreshed per tick)
+     * @param nativeHit  position in the hit space's native coordinates — equals
+     *                   {@code worldHit} for {@link AnchorSpace.World}, else the
+     *                   contraption-local / plot-space point
+     * @param nativeBlock native-space {@link BlockPos} of the block struck, when the
+     *                   integration provided it. Populated for SUBLEVEL hits (plot
+     *                   coords) so Core can do edge-wrap placement on unit-cube
+     *                   plot blocks. Null for WORLD / CONTRAPTION hits.
      */
-    public record MultiSpaceHit(Vec3 worldHit, Direction face, AnchorSpace space, Vec3 nativeHit) {}
+    public record MultiSpaceHit(Vec3 worldHit, Direction face, AnchorSpace space, Vec3 nativeHit,
+                                @Nullable BlockPos nativeBlock) {}
 
     /**
      * Broad-phase inflation (blocks) for finding contraption entities near the
@@ -83,7 +89,8 @@ public final class MultiSpaceRaycaster {
                     loc,
                     worldHit.getDirection(),
                     AnchorSpace.World.INSTANCE,
-                    loc);
+                    loc,
+                    worldHit.getBlockPos());
             closestDistSq = distSq;
         }
 
@@ -106,7 +113,8 @@ public final class MultiSpaceRaycaster {
                             hit.worldHit(),
                             hit.face(),
                             new AnchorSpace.Contraption(contraption.getId()),
-                            hit.localHit());
+                            hit.localHit(),
+                            null);
                 }
             }
         }
@@ -134,7 +142,8 @@ public final class MultiSpaceRaycaster {
                             hit.worldHit(),
                             hit.face(),
                             new AnchorSpace.SubLevel(uuid),
-                            hit.plotHit());
+                            hit.plotHit(),
+                            hit.plotBlock());
                 }
             });
             closest = closestRef[0];

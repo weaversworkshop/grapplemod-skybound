@@ -106,6 +106,15 @@ public class GrappleModUtils {
 		// Safety cap: rope segments are bounded by ropeLength (<100 blocks), so 1024
 		// voxels is far more than any legitimate raycast could need. Prevents an
 		// infinite loop on a degenerate ray.
+		//
+		// Loop structure: check current voxel, return null if it's the end voxel
+		// (we've visited every voxel the ray passes through), otherwise step. Do NOT
+		// early-exit on "all tMax > 1" — that check fires after a step that lands
+		// us *in* the end voxel, which preempts the next iteration's check of that
+		// voxel. For a grapple attached to a block, the rope-end ray's end voxel is
+		// typically the attach block itself; missing it means wrap corner-hunt sees
+		// no hit and bends never form. The endX/endY/endZ termination catches valid
+		// rays correctly; 1024 iter cap catches degenerate geometry.
 		BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
 		for (int i = 0; i < 1024; i++) {
 			probe.set(x, y, z);
@@ -122,8 +131,6 @@ public class GrappleModUtils {
 			if (tMaxX < tMaxY && tMaxX < tMaxZ) { x += stepX; tMaxX += tDeltaX; }
 			else if (tMaxY < tMaxZ)             { y += stepY; tMaxY += tDeltaY; }
 			else                                 { z += stepZ; tMaxZ += tDeltaZ; }
-
-			if (tMaxX > 1 && tMaxY > 1 && tMaxZ > 1) return null;
 		}
 		return null;
 	}
