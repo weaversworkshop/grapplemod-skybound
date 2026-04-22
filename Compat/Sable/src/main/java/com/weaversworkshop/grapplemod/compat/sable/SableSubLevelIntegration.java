@@ -137,8 +137,24 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         BlockPos hit = voxelTraverse(t.subLevel, plotStart, plotEnd);
         if (hit == null) return null;
 
-        Vec3 hitCentre = new Vec3(hit.getX() + 0.5, hit.getY() + 0.5, hit.getZ() + 0.5);
-        return pose.transformPosition(hitCentre);
+        // Compute the actual point where the plot-space ray enters the hit block's
+        // AABB, not just the block centre. Snapping to the centre looked like a
+        // teleport when grappling near a face edge.
+        double[] tRange = rayAabbIntersect(plotStart, plotEnd,
+                hit.getX(), hit.getY(), hit.getZ(),
+                hit.getX() + 1, hit.getY() + 1, hit.getZ() + 1);
+        Vec3 plotEntry;
+        if (tRange != null) {
+            double tEnter = Math.max(0.0, tRange[0]);
+            plotEntry = new Vec3(
+                    plotStart.x + (plotEnd.x - plotStart.x) * tEnter,
+                    plotStart.y + (plotEnd.y - plotStart.y) * tEnter,
+                    plotStart.z + (plotEnd.z - plotStart.z) * tEnter);
+        } else {
+            // Degenerate ray (zero-length or numerical edge case) — fall back to centre.
+            plotEntry = new Vec3(hit.getX() + 0.5, hit.getY() + 0.5, hit.getZ() + 0.5);
+        }
+        return pose.transformPosition(plotEntry);
     }
 
     /**
