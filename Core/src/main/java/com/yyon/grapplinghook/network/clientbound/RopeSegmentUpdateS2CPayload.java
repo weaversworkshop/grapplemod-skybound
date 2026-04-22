@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.network.S2CPayload;
+import com.yyon.grapplinghook.physics.AnchorSpace;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.NullableDirection;
 import com.yyon.grapplinghook.util.Vec;
@@ -30,25 +31,43 @@ import org.jetbrains.annotations.NotNull;
  */
 
 // Previously SegmentMessage
-public record RopeSegmentUpdateS2CPayload(int hookId, boolean shouldAdd, int index, Vec pos, NullableDirection topFacing, NullableDirection bottomFacing) implements S2CPayload {
+//
+// For {@code shouldAdd=false} (remove), {@code space} is ignored — encode as
+// {@link AnchorSpace.World} sentinel. Callers constructing a remove payload
+// should pass {@link AnchorSpace.World#INSTANCE}.
+public record RopeSegmentUpdateS2CPayload(int hookId, boolean shouldAdd, int index, Vec pos,
+										  NullableDirection topFacing, NullableDirection bottomFacing,
+										  AnchorSpace space) implements S2CPayload {
 	public static final ResourceLocation IDENTIFIER = GrappleMod.id("rope_segment_update");
 	public static final CustomPacketPayload.Type<RopeSegmentUpdateS2CPayload> PAYLOAD_TYPE = new Type<>(IDENTIFIER);
 
-	public static final StreamCodec<RegistryFriendlyByteBuf, RopeSegmentUpdateS2CPayload> STREAM_CODEC = StreamCodec.composite(
-			ByteBufCodecs.INT,
-			RopeSegmentUpdateS2CPayload::hookId,
-			ByteBufCodecs.BOOL,
-			RopeSegmentUpdateS2CPayload::shouldAdd,
-			ByteBufCodecs.INT,
-			RopeSegmentUpdateS2CPayload::index,
-			Vec.STREAM_CODEC,
-			RopeSegmentUpdateS2CPayload::pos,
-			GrappleModUtils.NULLABLE_DIRECTION_STREAM_CODEC,
-			RopeSegmentUpdateS2CPayload::topFacing,
-			GrappleModUtils.NULLABLE_DIRECTION_STREAM_CODEC,
-			RopeSegmentUpdateS2CPayload::bottomFacing,
-			RopeSegmentUpdateS2CPayload::new
-	);
+	// Manual codec — StreamCodec.composite maxes out at 6 field/getter pairs; this
+	// payload carries 7 fields (hookId, shouldAdd, index, pos, topFacing, bottomFacing,
+	// space). Keep in lock-step with the record's field order.
+	public static final StreamCodec<RegistryFriendlyByteBuf, RopeSegmentUpdateS2CPayload> STREAM_CODEC = new StreamCodec<>() {
+		@Override
+		public RopeSegmentUpdateS2CPayload decode(RegistryFriendlyByteBuf buf) {
+			int hookId = ByteBufCodecs.INT.decode(buf);
+			boolean shouldAdd = ByteBufCodecs.BOOL.decode(buf);
+			int index = ByteBufCodecs.INT.decode(buf);
+			Vec pos = Vec.STREAM_CODEC.decode(buf);
+			NullableDirection topFacing = GrappleModUtils.NULLABLE_DIRECTION_STREAM_CODEC.decode(buf);
+			NullableDirection bottomFacing = GrappleModUtils.NULLABLE_DIRECTION_STREAM_CODEC.decode(buf);
+			AnchorSpace space = AnchorSpace.STREAM_CODEC.decode(buf);
+			return new RopeSegmentUpdateS2CPayload(hookId, shouldAdd, index, pos, topFacing, bottomFacing, space);
+		}
+
+		@Override
+		public void encode(RegistryFriendlyByteBuf buf, RopeSegmentUpdateS2CPayload v) {
+			ByteBufCodecs.INT.encode(buf, v.hookId());
+			ByteBufCodecs.BOOL.encode(buf, v.shouldAdd());
+			ByteBufCodecs.INT.encode(buf, v.index());
+			Vec.STREAM_CODEC.encode(buf, v.pos());
+			GrappleModUtils.NULLABLE_DIRECTION_STREAM_CODEC.encode(buf, v.topFacing());
+			GrappleModUtils.NULLABLE_DIRECTION_STREAM_CODEC.encode(buf, v.bottomFacing());
+			AnchorSpace.STREAM_CODEC.encode(buf, v.space());
+		}
+	};
 
 	@NotNull
 	@Override

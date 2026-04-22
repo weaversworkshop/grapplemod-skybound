@@ -295,6 +295,11 @@ public class GrapplingHookPhysicsController {
 
 		for (GrapplinghookEntity hookEntity : this.grapplehookEntities) {
 			Vec hookPos = Vec.positionVec(hookEntity);
+			// Rope segmenting uses the hand position so wrap detection aligns with the
+			// visible rope. Physics math below continues to use playerPos (eye) since
+			// the pendulum center is the player's body-ish anchor; the small offset
+			// between hand and eye is tolerated by the taut-rope buffer.
+			Vec ropeEndpoint = hookEntity.getRopeOriginAtHolder();
 			RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
 
 			// Update segment handler (handles rope bends).
@@ -308,9 +313,9 @@ public class GrapplingHookPhysicsController {
 			boolean skipRopeWrap = this.custom.get(BLOCK_PHASE_ROPE.get())
 					|| hookEntity.attachment() instanceof HookAttachment.SubLevelBlock;
 			if (skipRopeWrap) {
-				segmentHandler.updatePos(hookPos, playerPos, hookEntity.ropeLength);
+				segmentHandler.updatePos(hookPos, ropeEndpoint, hookEntity.ropeLength);
 			} else {
-				segmentHandler.update(hookPos, playerPos, hookEntity.ropeLength, false);
+				segmentHandler.update(hookPos, ropeEndpoint, hookEntity.ropeLength, false);
 			}
 
 			// vectors along rope

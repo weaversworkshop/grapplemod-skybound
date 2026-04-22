@@ -34,6 +34,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
@@ -146,14 +147,14 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 		this.isInDoublePair = isInDoublePair;
 		
-		Vec pos = Vec.positionVec(this.shootingEntity).add(new Vec(0, this.shootingEntity.getEyeHeight(), 0));
+		this.isAttachedToMainHand = isAttachedToMainHand;   // set early so getRopeOriginAtHolder sees the right hand side
+		Vec pos = this.getRopeOriginAtHolder();
 
 		this.segmentHandler = new RopeSegmentHandler(this, new Vec(pos), new Vec(pos));
 
 		this.customization = customization;
 		this.ropeLength = customization.get(MAX_ROPE_LENGTH.get());
-		
-		this.isAttachedToMainHand = isAttachedToMainHand;
+
 		this.isAttachedToSurface = false;
 	}
 
@@ -225,7 +226,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		if (this.shootingEntity == null) {
 			return super.getBoundingBoxForCulling();
 		}
-		return this.segmentHandler.getBoundingBox(Vec.positionVec(this), Vec.positionVec(this.shootingEntity).add(new Vec(0, this.shootingEntity.getEyeHeight(), 0)));
+		return this.segmentHandler.getBoundingBox(Vec.positionVec(this), this.getRopeOriginAtHolder());
 	}
 
 	@NotNull
@@ -597,7 +598,11 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		}
 
 		Vec hookPos = Vec.positionVec(this);
-		Vec playerPos = Vec.positionVec(this.shootingEntity).add(new Vec(0, this.shootingEntity.getEyeHeight(), 0));
+		// Use the holder's hand position (not eye) as the rope's player-endpoint so
+		// wrap/unwrap math operates on the same line the renderer draws. Keeps
+		// rope bends aligned with the visible rope even when the player's eye and
+		// hand diverge (e.g. near walls, looking up/down, different body yaw).
+		Vec playerPos = this.getRopeOriginAtHolder();
 
 		// Server-side rope-wrap raytrace goes through BlockGetter.clip, which Sable
 		// patches to transform the ray into plot space and walk millions of voxels
@@ -1190,6 +1195,39 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	public boolean isHeldInMainHand() {
 		return this.isAttachedToMainHand;
+	}
+
+	/**
+	 * World-space point where the rope meets the holder — approximately the hand.
+	 * Used as the player-endpoint for rope segmenting so wrap/unwrap math operates on
+	 * the same line the renderer draws. The visual rope starts at the rendered hand
+	 * (with partial-tick interpolation + swing animation); this method returns the
+	 * tick-boundary version using the third-person hand-offset formula, which is
+	 * deterministic and server-safe (no camera / FOV / animation state).
+	 *
+	 * <p>Close to but not identical to the rendered hand in first-person (which uses
+	 * a camera-dependent offset). The discrepancy is a fraction of a block — close
+	 * enough that wrap detection aligns with what the player sees.</p>
+	 *
+	 * <p>Falls back to the hook's own position if the holder has been cleared
+	 * (e.g. shooter disconnected) — callers of rope updates shouldn't be running
+	 * in that state, but the guard avoids a NullPointer.</p>
+	 */
+	public Vec getRopeOriginAtHolder() {
+		Entity shooter = this.shootingEntity;
+		if (!(shooter instanceof LivingEntity holder)) {
+			return shooter != null ? Vec.positionVec(shooter) : Vec.positionVec(this);
+		}
+
+		int handDirection = (holder.getMainArm() == HumanoidArm.RIGHT ? 1 : -1)
+				* (this.isHeldInMainHand() ? 1 : -1);
+		Vec handOffset = new Vec(
+				handDirection * -0.36,
+				-0.65 + (holder.isCrouching() ? -0.1875 : 0.0),
+				0.6);
+		handOffset = handOffset.rotateYaw(holder.yBodyRot * (Math.PI / 180.0));
+		handOffset.y += holder.getEyeHeight();
+		return Vec.positionVec(holder).add(handOffset);
 	}
 
 	public Vec getSurfaceAttachmentDirection() {

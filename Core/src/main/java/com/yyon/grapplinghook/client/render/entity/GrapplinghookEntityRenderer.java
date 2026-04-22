@@ -179,11 +179,12 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 
 			} else {
 
-				if (ropeHandler == null || ropeHandler.segments.size() <= 2) {
+				java.util.List<Vec> dirSegs = ropeHandler == null ? null : ropeHandler.getSegments();
+				if (dirSegs == null || dirSegs.size() <= 2) {
 					attachDirection = this.getRelativeToEntity(hookEntity, new Vec(handPosition), partialTicks);
 
 				} else {
-					Vec from = ropeHandler.segments.get(1);
+					Vec from = dirSegs.get(1);
 					Vec to = Vec.partialPositionVec(hookEntity, partialTicks);
 					attachDirection = from.sub(to);
 				}
@@ -242,20 +243,21 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 			this.drawSegment(new Vec(0,0,0), finishRelative, 1.0F, vertexBuffer, poseEntry, poseMatrix, normalMatrix, packedLight, styleId);
 
 		} else {
-			for (int i = 0; i < ropeHandler.segments.size() - 1; i++) {
-				Vec from = ropeHandler.segments.get(i);
-				Vec to = ropeHandler.segments.get(i+1);
+			java.util.List<Vec> segments = ropeHandler.getSegments();
+			for (int i = 0; i < segments.size() - 1; i++) {
+				Vec from = segments.get(i);
+				Vec to = segments.get(i+1);
 
 				if (i == 0)
 					from = Vec.partialPositionVec(hookEntity, partialTicks);
 
-				if (i + 2 == ropeHandler.segments.size())
+				if (i + 2 == segments.size())
 					to = handPosition;
 
 				from = this.getRelativeToEntity(hookEntity, from, partialTicks);
 				to = this.getRelativeToEntity(hookEntity, to, partialTicks);
 
-				double taut = i == ropeHandler.segments.size() - 2
+				double taut = i == segments.size() - 2
 						? hookEntity.taut
 						: 1.0D;
 
@@ -271,9 +273,10 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 	private void drawRopeEnding(GrapplinghookEntity hookEntity, RopeSegmentHandler ropeHandler, Vec handPosition, int packedLight, float partialTicks, RopeStyle styleId, VertexConsumer vertexBuffer, PoseStack.Pose pose, Matrix4f poseMatrix, Matrix3f normalMatrix) {
 		// draw tip of rope closest to hand
 		Vec hook_pos = Vec.partialPositionVec(hookEntity, partialTicks);
-		Vec hand_closest = ropeHandler == null || ropeHandler.segments.size() <= 2
+		java.util.List<Vec> endingSegs = ropeHandler == null ? null : ropeHandler.getSegments();
+		Vec hand_closest = endingSegs == null || endingSegs.size() <= 2
 				? hook_pos
-				: ropeHandler.segments.get(ropeHandler.segments.size() - 2);
+				: endingSegs.get(endingSegs.size() - 2);
 
 		Vec diff = hand_closest.sub(handPosition);
 		Vec forward = diff.withMagnitude(1);

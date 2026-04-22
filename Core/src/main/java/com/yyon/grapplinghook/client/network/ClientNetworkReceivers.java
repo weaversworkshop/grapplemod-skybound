@@ -118,7 +118,16 @@ public final class ClientNetworkReceivers {
         if (grapple instanceof GrapplinghookEntity hookEntity) {
             RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
             if (payload.shouldAdd()) {
-                segmentHandler.actuallyAddSegment(payload.index(), payload.pos(), payload.bottomFacing(), payload.topFacing());
+                // Wire carries the server-resolved world-space position. For non-WORLD
+                // bends, nativePos will be reconciled on the next tick refresh via the
+                // owning integration — matching the convention in RopeSnapshot.fromWire.
+                com.yyon.grapplinghook.physics.RopeBend bend = new com.yyon.grapplinghook.physics.RopeBend(
+                        payload.space(),
+                        payload.pos(),
+                        payload.pos(),
+                        payload.topFacing().toVanilla(),
+                        payload.bottomFacing().toVanilla());
+                segmentHandler.addBend(payload.index(), bend);
             } else {
                 segmentHandler.removeSegment(payload.index());
             }
