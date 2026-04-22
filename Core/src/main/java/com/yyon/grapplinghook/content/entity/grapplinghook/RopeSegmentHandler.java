@@ -149,19 +149,17 @@ public class RopeSegmentHandler {
 		boolean useLegacy = GrappleModCommonConfig.get().useLegacyRopeWrap();
 
 		if (useLegacy) {
-			// Preserve the exact v1 order: unwrap once, wrap once.
+			// True v1 path: plane-test unwrap + corner-hunting wrap, once. No
+			// convergence loop, no redundant-bend sweep — behave exactly like v1.
 			this.unwrapPass(hookpos, playerpos, movinghook);
 			this.wrapPassLegacy(hookpos, playerpos, movinghook);
 		} else {
-			// Convergence loop: unwrap+wrap alternate until the bend list is stable.
-			// A wrap can add bends that unwrap must then evaluate; an unwrap can leave
-			// a new longer segment that wrap must then check for intersections. The
-			// invariant we converge toward: every adjacent pair of bends is either
-			// unblocked by world geometry (wrap has nothing to add) or blocked at a
-			// bend that the unwrap plane test agrees with.
+			// Surface-algorithm convergence loop: plane-test unwrap + redundant
+			// sweep + surface wrap, iterated until the bend list stops changing.
 			for (int iter = 0; iter < MAX_ITERS; iter++) {
 				int before = this.bends.size();
 				this.unwrapPass(hookpos, playerpos, movinghook);
+				this.redundantBendSweep();
 				this.wrapPassSurface(hookpos, playerpos, movinghook);
 				if (this.bends.size() == before) break;
 				if (iter == MAX_ITERS - 1) {
@@ -182,6 +180,17 @@ public class RopeSegmentHandler {
 	 * Signed-distance plane test — remove bends whose rope vector has passed to the
 	 * outside of the unwrap plane. Algorithm unchanged from v1; now isolated so the
 	 * convergence loop can re-run it between wrap passes.
+	 */
+	/**
+	 * Plane-test unwrap — the original v1 algorithm, intact. Backward loop pops
+	 * bends closest to the player if the rope vector passes to the unwrap-side of
+	 * the plane defined by the bend's two face normals; forward loop mirrors on
+	 * the hook side (only when the hook is moving); final guard evicts far-side
+	 * bends if the chain exceeds {@code ropeLen}.
+	 *
+	 * <p>Both the legacy and surface paths call this. The legacy path runs it
+	 * once per tick (preserving v1 behavior). The surface path adds the separate
+	 * {@link #redundantBendSweep()} after it, which is <em>not</em> part of v1.</p>
 	 */
 	private void unwrapPass(Vec hookpos, Vec playerpos, boolean movinghook) {
 		// Backward unwrap — check the bend closest to the player.
@@ -218,28 +227,27 @@ public class RopeSegmentHandler {
 		while (this.bends.size() > 2 && this.getDistToFarthest() > this.ropeLen) {
 			this.removeSegment(1);
 		}
+	}
 
-		// Redundant-bend sweep. The plane test above only evaluates the two
-		// endpoint-adjacent bends — middle bends never get re-checked, so a bend
-		// can get "stuck" in the middle of the rope long after it's geometrically
-		// unnecessary (observed when swinging underneath a tree: rope wraps the
-		// bottom edge of a leaf block and won't let go). A bend is unnecessary if
-		// the straight line between its neighbors doesn't pass through any solid
-		// block — if that's clear, removing the bend can't re-introduce an
-		// intersection, so it's always safe. Walk backwards so removals don't
-		// shift indices we haven't visited yet.
+	/**
+	 * Surface-algorithm-only redundant-bend sweep — for each middle bend, raycast
+	 * from its previous neighbor to its next neighbor; if the line is clear the
+	 * bend is unnecessary (removing it can't re-introduce an intersection since
+	 * we just verified there isn't one) and gets dropped. This catches "stuck"
+	 * middle bends that the plane test never reaches (plane test only looks at
+	 * endpoint-adjacent bends).
+	 *
+	 * <p><b>Not part of v1.</b> Kept out of {@link #unwrapPass} so that the
+	 * {@code legacyRopeWrap=true} path matches v1 exactly.</p>
+	 */
+	private void redundantBendSweep() {
 		for (int i = this.bends.size() - 2; i >= 1; i--) {
 			if (this.bends.size() <= 2) break;
 			if (i >= this.bends.size() - 1) continue;
 			Vec prev = this.bends.get(i - 1).worldPos;
 			Vec next = this.bends.get(i + 1).worldPos;
-			// Shrink the raycast endpoints slightly toward the segment's centre so
-			// the test has margin away from the bend positions themselves. Bends sit
-			// BEND_OFFSET off real block surfaces; a ray that starts/ends exactly on
-			// those positions can graze the block and register a hit even though the
-			// rope physically has room to straighten. Shrinking by SHRINK_MARGIN
-			// gives the check enough clearance to distinguish a real obstruction
-			// from a tangent-at-endpoint artifact.
+			// Shrink endpoints so a ray grazing at the bend offset doesn't report
+			// a false hit (bends sit BEND_OFFSET off real block surfaces).
 			Vec direction = next.sub(prev);
 			double length = direction.length();
 			if (length > 0.02) {

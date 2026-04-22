@@ -216,13 +216,15 @@ public class GrappleModCommonConfig extends DefaultValueTracker implements IConf
     // they're escape hatches rather than day-to-day settings.
 
     @SerialEntry @Category("item")
-    private boolean legacyRopeWrap = false;
+    private boolean legacyRopeWrap = true;
 
     /**
-     * Fall back to the pre-v2 corner-hunting rope wrap/unwrap algorithm. Useful for
-     * A/B comparisons while validating the new surface-walking algorithm. Default
-     * {@code false} — the new algorithm handles static wrap, outside corners, and
-     * multi-block protrusions that the legacy one couldn't.
+     * Selects the pre-v2 corner-hunting rope wrap/unwrap algorithm over the new
+     * surface-walking one. Default {@code true} — the surface algorithm is
+     * structurally capable (static wrap, outside corners, multi-block protrusions)
+     * but the refinements that would make it feel as polished as the legacy
+     * algorithm are deferred (see the v2 rope plan). Flip to {@code false} to opt
+     * into the surface algorithm and help shake out the remaining rough edges.
      */
     public boolean useLegacyRopeWrap() {
         return this.legacyRopeWrap;
