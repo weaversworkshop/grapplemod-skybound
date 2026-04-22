@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.physics.raycast;
 
 import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
+import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.physics.AnchorSpace;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
@@ -70,7 +71,10 @@ public final class MultiSpaceRaycaster {
         MultiSpaceHit closest = null;
         double closestDistSq = Double.MAX_VALUE;
 
-        // WORLD span — vanilla raycast over the full segment.
+        // WORLD span — vanilla raycast over the full segment. GrappleModUtils.rayTraceBlocks
+        // now walks voxels via Level.getBlockState directly rather than through
+        // BlockGetter.clip, so Sable's mixin on the latter never fires — no need to
+        // partition the ray around sub-level AABBs.
         BlockHitResult worldHit = GrappleModUtils.rayTraceBlocks(context, level, rayStart, rayEnd);
         if (worldHit != null) {
             Vec3 loc = worldHit.getLocation();
@@ -107,7 +111,35 @@ public final class MultiSpaceRaycaster {
             }
         }
 
-        // TODO Phase 3: SUBLEVEL spans via SubLevelIntegration.raycastSubLevelDetailed.
+        // SUBLEVEL spans — enumerate tracked sub-levels and ask each integration
+        // for a detailed hit. Sub-levels have no Minecraft entity to query via
+        // Level.getEntities, so the integration exposes its tracked set via
+        // forEachTrackedSubLevel. Broad-phase: skip sub-levels whose apparent
+        // AABB doesn't intersect the (inflated) ray AABB. Narrow-phase: the
+        // integration's raycastSubLevelDetailed walks plot-space voxels.
+        if (GrappleModIntegrations.hasSubLevelIntegration()) {
+            SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+            AABB searchBox = new AABB(rayStart.toVec3d(), rayEnd.toVec3d()).inflate(CONTRAPTION_BROAD_PHASE_INFLATE);
+            double[] closestBox = { closestDistSq };
+            MultiSpaceHit[] closestRef = { closest };
+            sli.forEachTrackedSubLevel((uuid, aabb) -> {
+                if (!aabb.intersects(searchBox)) return;
+                SubLevelIntegration.SubLevelRaycastHit hit = sli.raycastSubLevelDetailed(
+                        uuid, rayStart.toVec3d(), rayEnd.toVec3d(), partialTicks);
+                if (hit == null) return;
+                double distSq = hit.worldHit().distanceToSqr(rayStart.toVec3d());
+                if (distSq < closestBox[0]) {
+                    closestBox[0] = distSq;
+                    closestRef[0] = new MultiSpaceHit(
+                            hit.worldHit(),
+                            hit.face(),
+                            new AnchorSpace.SubLevel(uuid),
+                            hit.plotHit());
+                }
+            });
+            closest = closestRef[0];
+            closestDistSq = closestBox[0];
+        }
 
         return closest;
     }

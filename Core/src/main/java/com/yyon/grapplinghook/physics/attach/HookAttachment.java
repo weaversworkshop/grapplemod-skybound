@@ -50,6 +50,38 @@ public sealed interface HookAttachment
      */
     GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget();
 
+    /**
+     * Outward face direction at the hook's anchor point, if the attachment sits on
+     * a block face — used to nudge the rope's hook-end endpoint outward so the
+     * first rope raycast doesn't start inside a solid block. Returns {@code null}
+     * for attachments that have no block face (plain {@link Entity}, or a
+     * {@link ContraptionBlock} that was attached mid-flight without a known
+     * local block cell).
+     */
+    default @Nullable Direction ropeAnchorFace() { return null; }
+
+    /**
+     * Face-inference helper: given a block position and a hit point in the block's
+     * local coordinate system (the hit point's floored coords equal {@code block}),
+     * return the face the hit is on. Picks whichever of the six block faces the
+     * hit is closest to — correct for points on or near the surface, degenerate
+     * to {@link Direction#UP} for mid-block hits.
+     */
+    static Direction inferFace(BlockPos block, Vec3 hitPoint) {
+        double dx = hitPoint.x - block.getX();
+        double dy = hitPoint.y - block.getY();
+        double dz = hitPoint.z - block.getZ();
+        double bestDist = Double.MAX_VALUE;
+        Direction best = Direction.UP;
+        if (dx < bestDist)      { bestDist = dx;      best = Direction.WEST;  }
+        if (1 - dx < bestDist)  { bestDist = 1 - dx;  best = Direction.EAST;  }
+        if (dy < bestDist)      { bestDist = dy;      best = Direction.DOWN;  }
+        if (1 - dy < bestDist)  { bestDist = 1 - dy;  best = Direction.UP;    }
+        if (dz < bestDist)      { bestDist = dz;      best = Direction.NORTH; }
+        if (1 - dz < bestDist)  {                     best = Direction.SOUTH; }
+        return best;
+    }
+
     // ------------------------------------------------------------------
     // Variants
     // ------------------------------------------------------------------
@@ -60,6 +92,10 @@ public sealed interface HookAttachment
         @Override public Vec3 worldHitPoint(float partialTicks) { return subHitPoint; }
         @Override public GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget() {
             return new GrappleAttachS2CPayload.GrappleAttachTarget.Block(pos);
+        }
+        @Override public @Nullable Direction ropeAnchorFace() {
+            if (sideHit != null) return sideHit;
+            return inferFace(pos, subHitPoint);
         }
     }
 
@@ -141,6 +177,11 @@ public sealed interface HookAttachment
         @Override public GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget() {
             return new GrappleAttachS2CPayload.GrappleAttachTarget.EntityOffset(entityId, localOffset);
         }
+
+        @Override public @Nullable Direction ropeAnchorFace() {
+            if (localBlockPos == null) return null;
+            return inferFace(localBlockPos, localOffset);
+        }
     }
 
     /**
@@ -160,6 +201,13 @@ public sealed interface HookAttachment
         @Override public GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget() {
             return new GrappleAttachS2CPayload.GrappleAttachTarget.SubLevel(
                     subLevelId, plotBlock, plotHitPoint);
+        }
+
+        @Override public @Nullable Direction ropeAnchorFace() {
+            // Face inferred in plot-space coords; for translation-only poses (the
+            // common Aeronautics case) this is identical to world-space. Rotated
+            // sub-levels are covered by project_v2_rope_rotation_limitation.md.
+            return inferFace(plotBlock, plotHitPoint);
         }
     }
 

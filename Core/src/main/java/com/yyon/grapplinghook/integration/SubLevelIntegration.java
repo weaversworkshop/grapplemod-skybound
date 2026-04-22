@@ -1,11 +1,13 @@
 package com.yyon.grapplinghook.integration;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.UUID;
+import java.util.function.BiConsumer;
 
 /**
  * SPI for mods that contribute UUID-keyed "sub-level" moving structures — blocks
@@ -50,6 +52,31 @@ public interface SubLevelIntegration {
      */
     @Nullable Vec3 raycastSubLevel(UUID subLevelId, Vec3 rayStart, Vec3 rayEnd, float partialTicks);
 
+    /**
+     * Detailed per-block raycast — same as {@link #raycastSubLevel} but also
+     * returns the face direction struck and the plot-space hit position. Used
+     * by the multi-space rope raycast so a SUBLEVEL bend can be stored with
+     * its native coordinates (for per-tick {@code plotToWorld} refresh) and
+     * the face it's anchored against (for unwrap plane geometry).
+     *
+     * <p>Default implementation returns {@code null} for SPIs that haven't yet
+     * implemented the detailed variant — rope bends will not be placed on
+     * those sub-levels, but the old {@link #raycastSubLevel} path still works
+     * for the flight-phase hook.</p>
+     *
+     * @param worldHit apparent world-space hit point (same as {@link #raycastSubLevel})
+     * @param face     world-space face direction at time of hit. Note: the
+     *                 face is captured at placement — if the sub-level rotates
+     *                 after the bend is placed, the stored Direction will not
+     *                 track the rotation (see project_v2_rope_rotation_limitation.md).
+     * @param plotHit  hit point in the sub-level's plot-space coords
+     */
+    record SubLevelRaycastHit(Vec3 worldHit, Direction face, Vec3 plotHit) {}
+
+    default @Nullable SubLevelRaycastHit raycastSubLevelDetailed(UUID subLevelId, Vec3 rayStart, Vec3 rayEnd, float partialTicks) {
+        return null;
+    }
+
     /** Plot-space point → apparent world-space, via the sub-level's current pose. */
     Vec3 plotToWorld(UUID subLevelId, Vec3 plotPoint, float partialTicks);
 
@@ -90,4 +117,15 @@ public interface SubLevelIntegration {
      * {@code BlockGetter.clip} does for rope wrapping).
      */
     boolean anyTrackedSubLevelOverlaps(AABB probe);
+
+    /**
+     * Visit every currently-tracked sub-level with its UUID and current
+     * apparent-world bounding box. Used by the multi-space rope raycast
+     * to enumerate sub-level candidates along a ray — mirrors how the
+     * contraption integration is iterated via {@code Level.getEntities}.
+     *
+     * <p>Default no-op; compat modules override to expose their tracked
+     * set. Iteration order is unspecified.</p>
+     */
+    default void forEachTrackedSubLevel(BiConsumer<UUID, AABB> visitor) {}
 }

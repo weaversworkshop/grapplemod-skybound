@@ -597,24 +597,21 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 						false);
 		}
 
-		Vec hookPos = Vec.positionVec(this);
+		// Hook-side rope endpoint: offset outward from the attach face when the hook
+		// is stuck in a block so the first rope raycast doesn't start inside the
+		// VoxelShape. See getRopeAnchorHookPos for the rationale.
+		Vec hookPos = this.getRopeAnchorHookPos();
 		// Use the holder's hand position (not eye) as the rope's player-endpoint so
 		// wrap/unwrap math operates on the same line the renderer draws. Keeps
 		// rope bends aligned with the visible rope even when the player's eye and
 		// hand diverge (e.g. near walls, looking up/down, different body yaw).
 		Vec playerPos = this.getRopeOriginAtHolder();
 
-		// Server-side rope-wrap raytrace goes through BlockGetter.clip, which Sable
-		// patches to transform the ray into plot space and walk millions of voxels
-		// when it crosses a sub-level's apparent AABB — same bug as the client-side
-		// rope hang (see project_sable_rope_raytrace_hang.md) and the in-flight
-		// projectile hang (project_sable_projectile_flight_hang.md). If the segment
-		// from player to hook intersects any tracked sub-level AABB, drop to the
-		// no-raytrace updatePos path. v2 can swap this for a real plot-aware
-		// wrap raytrace; for v1 the in-flight rope just stays straight over ships.
-		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-		boolean ropeCrossesSubLevel = sli.findSubLevelAlongRay(hookPos.toVec3d(), playerPos.toVec3d()) != null;
-		boolean skipRopeWrap = this.customization.get(BLOCK_PHASE_ROPE.get()) || ropeCrossesSubLevel;
+		// Phase 3: rope wrap now goes through MultiSpaceRaycaster, which routes
+		// SUBLEVEL spans to the Sable integration's plot-space voxel walker
+		// (bypassing the BlockGetter.clip hang entirely). The only remaining
+		// reason to skip wrap is the player's explicit BLOCK_PHASE_ROPE toggle.
+		boolean skipRopeWrap = this.customization.get(BLOCK_PHASE_ROPE.get());
 
 		if (!skipRopeWrap) {
 			this.segmentHandler.update(hookPos, playerPos, this.ropeLength, true);
@@ -1229,6 +1226,33 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		handOffset.y += holder.getEyeHeight();
 		return Vec.positionVec(holder).add(handOffset);
 	}
+
+	/**
+	 * The hook's world position as the rope sees it — same as {@link Vec#positionVec}
+	 * for an in-flight or entity-attached hook, but nudged outward from the attach
+	 * face by {@link #ROPE_ANCHOR_FACE_OFFSET} when the hook is stuck on a block
+	 * (world block, Create contraption block, or Sable sub-level block). The
+	 * hit-point world coord lives exactly on the block face, so any pose drift or
+	 * numerical slop can land the rope's starting raycast a hair inside the solid
+	 * VoxelShape — which {@link com.yyon.grapplinghook.physics.raycast.MultiSpaceRaycaster}
+	 * then reports as an immediate hit against the same block the hook is in, and
+	 * the rope visually clips through. Pushing the rope's starting point outward
+	 * along the attach face avoids that. The hook entity itself still sits at the
+	 * exact hit point, so visually it remains lodged in the block.
+	 */
+	public Vec getRopeAnchorHookPos() {
+		Vec pos = Vec.positionVec(this);
+		if (this.attachment == null) return pos;
+		Direction face = this.attachment.ropeAnchorFace();
+		if (face == null) return pos;
+		return pos.add(new Vec(
+				face.getStepX() * ROPE_ANCHOR_FACE_OFFSET,
+				face.getStepY() * ROPE_ANCHOR_FACE_OFFSET,
+				face.getStepZ() * ROPE_ANCHOR_FACE_OFFSET));
+	}
+
+	/** Same outward offset used for non-endpoint rope bends (see {@code CONTRAPTION_BEND_OFFSET}). */
+	private static final double ROPE_ANCHOR_FACE_OFFSET = 0.08;
 
 	public Vec getSurfaceAttachmentDirection() {
 		return this.attachDirection;

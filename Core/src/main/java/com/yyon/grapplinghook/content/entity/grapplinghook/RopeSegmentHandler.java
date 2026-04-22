@@ -9,6 +9,7 @@ import com.yyon.grapplinghook.physics.RopeBend;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
 import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
+import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import com.yyon.grapplinghook.physics.raycast.MultiSpaceRaycaster;
 import com.yyon.grapplinghook.physics.raycast.WrapEdgeFinder;
@@ -294,8 +295,15 @@ public class RopeSegmentHandler {
 				Vec3 newWorld = GrappleModIntegrations.getContraptionIntegration()
 						.localToWorld(host, bend.nativePos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
 				bend.worldPos = new Vec(newWorld.x, newWorld.y, newWorld.z);
+			} else if (bend.space instanceof AnchorSpace.SubLevel sl) {
+				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+				if (!sli.isSubLevelLoaded(sl.subLevelId())) {
+					this.removeSegment(i);
+					continue;
+				}
+				Vec3 newWorld = sli.plotToWorld(sl.subLevelId(), bend.nativePos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
+				bend.worldPos = new Vec(newWorld.x, newWorld.y, newWorld.z);
 			}
-			// SUBLEVEL: reserved for Phase 3 — plotToWorld here, with removed-check.
 		}
 	}
 
@@ -346,20 +354,24 @@ public class RopeSegmentHandler {
 	 * gameplay pays nothing for this pass.</p>
 	 */
 	private void movingHostSweep() {
-		if (!GrappleModIntegrations.hasContraptionIntegration()) return;
+		if (!GrappleModIntegrations.hasContraptionIntegration()
+				&& !GrappleModIntegrations.hasSubLevelIntegration()) return;
 		int i = 1;
 		while (i < this.bends.size()) {
 			Vec top = this.bends.get(i - 1).worldPos;
 			Vec bot = this.bends.get(i).worldPos;
 			MultiSpaceRaycaster.MultiSpaceHit hit = MultiSpaceRaycaster.raycast(
 					this.hookEntity, this.world, bot, top, CONTRAPTION_PARTIAL_TICKS);
+			Vec inserted = null;
 			if (hit != null && hit.space() instanceof AnchorSpace.Contraption c) {
-				Vec inserted = insertContraptionBend(top, bot, i, hit, c);
-				if (inserted != null) {
-					// A new bend took index i; advance past it so we don't
-					// immediately re-examine the same sub-segment.
-					i++;
-				}
+				inserted = insertContraptionBend(top, bot, i, hit, c);
+			} else if (hit != null && hit.space() instanceof AnchorSpace.SubLevel sl) {
+				inserted = insertSubLevelBend(top, bot, i, hit, sl);
+			}
+			if (inserted != null) {
+				// A new bend took index i; advance past it so we don't
+				// immediately re-examine the same sub-segment.
+				i++;
 			}
 			i++;
 		}
@@ -444,8 +456,18 @@ public class RopeSegmentHandler {
 			placeWorldBend(top, bottom, index, depth, hit);
 		} else if (hit.space() instanceof AnchorSpace.Contraption c) {
 			placeContraptionBend(top, bottom, index, depth, hit, c);
+		} else if (hit.space() instanceof AnchorSpace.SubLevel sl) {
+			placeSubLevelBend(top, bottom, index, depth, hit, sl);
 		}
-		// SUBLEVEL: reserved for Phase 3.
+	}
+
+	/** Sub-level hit — symmetric counterpart to {@link #placeContraptionBend}. */
+	private void placeSubLevelBend(Vec top, Vec bottom, int index, int depth,
+	                               MultiSpaceRaycaster.MultiSpaceHit hit, AnchorSpace.SubLevel sl) {
+		Vec worldBendPos = insertSubLevelBend(top, bottom, index, hit, sl);
+		if (worldBendPos == null) return;
+		updateSegmentSurface(worldBendPos, bottom, index + 1, depth + 1);
+		updateSegmentSurface(top, worldBendPos, index, depth + 1);
 	}
 
 	/** Partial-ticks value passed to {@link ContraptionIntegration#raycastContraptionDetailed} for rotation sampling. */
@@ -528,6 +550,32 @@ public class RopeSegmentHandler {
 		return worldBendPos;
 	}
 
+	/**
+	 * Shared sub-level-bend insertion used by both the surface and legacy wrap
+	 * paths. Sibling of {@link #insertContraptionBend}: offsets outward along
+	 * the hit face, resolves the plot-space coords via the integration, and
+	 * inserts the bend. Returns the world-space bend position on success, or
+	 * {@code null} if the sub-level is no longer tracked. Micro-bend filter
+	 * intentionally skipped for the same reason as contraption bends — the
+	 * face-contact offset produces sub-1° deflections.
+	 */
+	private Vec insertSubLevelBend(Vec top, Vec bottom, int index,
+	                               MultiSpaceRaycaster.MultiSpaceHit hit, AnchorSpace.SubLevel sl) {
+		Direction face = hit.face();
+		Vec worldBendPos = new Vec(
+				hit.worldHit().x + face.getStepX() * CONTRAPTION_BEND_OFFSET,
+				hit.worldHit().y + face.getStepY() * CONTRAPTION_BEND_OFFSET,
+				hit.worldHit().z + face.getStepZ() * CONTRAPTION_BEND_OFFSET);
+
+		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+		if (!sli.isSubLevelLoaded(sl.subLevelId())) return null;
+		Vec3 plotPoint = sli.worldToPlot(sl.subLevelId(), worldBendPos.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
+		Vec nativePos = new Vec(plotPoint.x, plotPoint.y, plotPoint.z);
+
+		this.addBend(index, RopeBend.subLevel(sl.subLevelId(), nativePos, worldBendPos, null, face));
+		return worldBendPos;
+	}
+
 	private boolean isMicroBend(Vec a, Vec b, Vec c) {
 		Vec incoming = b.sub(a);
 		Vec outgoing = c.sub(b);
@@ -592,6 +640,14 @@ public class RopeSegmentHandler {
 		// wrap; we just anchor to the hit face in the contraption's local frame.
 		if (msHit.space() instanceof AnchorSpace.Contraption c) {
 			insertContraptionBend(top, bottom, index, msHit, c);
+			return;
+		}
+
+		// SUBLEVEL hit — same face-contact treatment as CONTRAPTION. The sub-level's
+		// pose translates and potentially rotates, so stable world edges don't exist;
+		// anchor to plot-space coords and refresh worldPos each tick.
+		if (msHit.space() instanceof AnchorSpace.SubLevel sl) {
+			insertSubLevelBend(top, bottom, index, msHit, sl);
 			return;
 		}
 

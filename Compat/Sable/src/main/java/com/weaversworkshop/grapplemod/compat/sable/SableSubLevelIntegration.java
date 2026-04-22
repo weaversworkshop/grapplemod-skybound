@@ -7,6 +7,7 @@ import dev.ryanhcode.sable.companion.math.Pose3dc;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.plot.LevelPlot;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.EmptyBlockGetter;
@@ -21,6 +22,7 @@ import org.slf4j.Logger;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * Sable-backed {@link SubLevelIntegration}. Keeps an internal
@@ -157,6 +159,43 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         return pose.transformPosition(plotEntry);
     }
 
+    @Override
+    public @Nullable SubLevelRaycastHit raycastSubLevelDetailed(UUID subLevelId, Vec3 rayStart, Vec3 rayEnd, float partialTicks) {
+        Tracked t = tracked.get(subLevelId);
+        if (t == null) return null;
+
+        Pose3dc pose = t.subLevel.logicalPose();
+        Vec3 plotStart = pose.transformPositionInverse(rayStart);
+        Vec3 plotEnd = pose.transformPositionInverse(rayEnd);
+
+        VoxelHit hit = voxelTraverseDetailed(t.subLevel, plotStart, plotEnd);
+        if (hit == null) return null;
+
+        // Compute plot-space entry point on the hit block's AABB, same as raycastSubLevel.
+        double[] tRange = rayAabbIntersect(plotStart, plotEnd,
+                hit.pos.getX(), hit.pos.getY(), hit.pos.getZ(),
+                hit.pos.getX() + 1, hit.pos.getY() + 1, hit.pos.getZ() + 1);
+        Vec3 plotEntry;
+        if (tRange != null) {
+            double tEnter = Math.max(0.0, tRange[0]);
+            plotEntry = new Vec3(
+                    plotStart.x + (plotEnd.x - plotStart.x) * tEnter,
+                    plotStart.y + (plotEnd.y - plotStart.y) * tEnter,
+                    plotStart.z + (plotEnd.z - plotStart.z) * tEnter);
+        } else {
+            plotEntry = new Vec3(hit.pos.getX() + 0.5, hit.pos.getY() + 0.5, hit.pos.getZ() + 0.5);
+        }
+
+        Vec3 worldHit = pose.transformPosition(plotEntry);
+        // Face is stored in plot-space; for translation-only poses (the common
+        // Aeronautics case) this is identical to world-space, so we pass it
+        // through untransformed. See project_v2_rope_rotation_limitation.md —
+        // rotated sub-levels need pose.transformDirection (future SPI work).
+        return new SubLevelRaycastHit(worldHit, hit.face, plotEntry);
+    }
+
+    private record VoxelHit(BlockPos pos, Direction face) {}
+
     /**
      * One-shot diagnostic: scan a 16-block tall column at the ray's entry (x,z) and
      * log every non-air Y. Currently unused — kept as a callable helper for future
@@ -251,6 +290,79 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
      * {@link LevelPlot#contains(ChunkPos)} guard short-circuits any probe outside the
      * plot's allocated region.</p>
      */
+    /**
+     * Detailed variant of {@link #voxelTraverse}: also returns the face direction
+     * crossed on entry to the hit cell (in plot-space coords). Used by
+     * {@link #raycastSubLevelDetailed}. Implementation is otherwise identical.
+     */
+    private static @Nullable VoxelHit voxelTraverseDetailed(SubLevel subLevel, Vec3 from, Vec3 to) {
+        LevelPlot plot = subLevel.getPlot();
+        if (plot == null) return null;
+
+        int x = Mth.floor(from.x), y = Mth.floor(from.y), z = Mth.floor(from.z);
+        int endX = Mth.floor(to.x), endY = Mth.floor(to.y), endZ = Mth.floor(to.z);
+
+        double dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+        int stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+        int stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+        int stepZ = dz > 0 ? 1 : dz < 0 ? -1 : 0;
+
+        double tDeltaX = stepX != 0 ? Math.abs(1.0 / dx) : Double.POSITIVE_INFINITY;
+        double tDeltaY = stepY != 0 ? Math.abs(1.0 / dy) : Double.POSITIVE_INFINITY;
+        double tDeltaZ = stepZ != 0 ? Math.abs(1.0 / dz) : Double.POSITIVE_INFINITY;
+
+        double tMaxX = stepX > 0 ? (x + 1 - from.x) / dx : stepX < 0 ? (from.x - x) / -dx : Double.POSITIVE_INFINITY;
+        double tMaxY = stepY > 0 ? (y + 1 - from.y) / dy : stepY < 0 ? (from.y - y) / -dy : Double.POSITIVE_INFINITY;
+        double tMaxZ = stepZ > 0 ? (z + 1 - from.z) / dz : stepZ < 0 ? (from.z - z) / -dz : Double.POSITIVE_INFINITY;
+
+        // Face crossed to enter the current cell. For i=0 we haven't stepped yet;
+        // the ray either starts inside the cell or entered it through one of the
+        // boundary axes. Seed with the axis whose slab provided tmin (the "dominant"
+        // entry face) by picking the closest of the initial tMax values — whichever
+        // axis has the smallest tMax is the one the ray *would* cross first, which
+        // is also the axis it most recently crossed to arrive here.
+        Direction entryFace;
+        if (stepX != 0 && tMaxX <= tMaxY && tMaxX <= tMaxZ) {
+            entryFace = stepX > 0 ? Direction.WEST : Direction.EAST;
+        } else if (stepY != 0 && tMaxY <= tMaxZ) {
+            entryFace = stepY > 0 ? Direction.DOWN : Direction.UP;
+        } else if (stepZ != 0) {
+            entryFace = stepZ > 0 ? Direction.NORTH : Direction.SOUTH;
+        } else {
+            entryFace = Direction.UP;
+        }
+
+        for (int i = 0; i < 256; i++) {
+            ChunkPos globalChunkPos = new ChunkPos(x >> 4, z >> 4);
+            if (plot.contains(globalChunkPos)) {
+                LevelChunk chunk = plot.getChunk(plot.toLocal(globalChunkPos));
+                if (chunk != null) {
+                    BlockPos probe = new BlockPos(x, y, z);
+                    BlockState state = chunk.getBlockState(probe);
+                    if (!state.isAir()
+                            && !state.getCollisionShape(EmptyBlockGetter.INSTANCE, probe).isEmpty()) {
+                        return new VoxelHit(probe, entryFace);
+                    }
+                }
+            }
+            if (x == endX && y == endY && z == endZ) return null;
+
+            if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+                x += stepX; tMaxX += tDeltaX;
+                entryFace = stepX > 0 ? Direction.WEST : Direction.EAST;
+            } else if (tMaxY < tMaxZ) {
+                y += stepY; tMaxY += tDeltaY;
+                entryFace = stepY > 0 ? Direction.DOWN : Direction.UP;
+            } else {
+                z += stepZ; tMaxZ += tDeltaZ;
+                entryFace = stepZ > 0 ? Direction.NORTH : Direction.SOUTH;
+            }
+
+            if (tMaxX > 1 && tMaxY > 1 && tMaxZ > 1) return null;
+        }
+        return null;
+    }
+
     private static @Nullable BlockPos voxelTraverse(SubLevel subLevel, Vec3 from, Vec3 to) {
         LevelPlot plot = subLevel.getPlot();
         if (plot == null) return null;
@@ -383,6 +495,18 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
     public @Nullable SubLevel getSubLevel(UUID subLevelId) {
         Tracked t = tracked.get(subLevelId);
         return t != null ? t.subLevel : null;
+    }
+
+    @Override
+    public void forEachTrackedSubLevel(BiConsumer<UUID, AABB> visitor) {
+        for (Map.Entry<UUID, Tracked> entry : tracked.entrySet()) {
+            SubLevel sl = entry.getValue().subLevel;
+            if (sl.isRemoved()) continue;
+            BoundingBox3dc bb = sl.boundingBox();
+            if (bb == null) continue;
+            AABB box = new AABB(bb.minX(), bb.minY(), bb.minZ(), bb.maxX(), bb.maxY(), bb.maxZ());
+            visitor.accept(entry.getKey(), box);
+        }
     }
 
     @Override
