@@ -4,6 +4,7 @@ import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.Contraption;
 import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
@@ -170,6 +171,84 @@ public class CreateContraptionIntegration implements ContraptionIntegration {
         }
 
         return closestHitWorld;
+    }
+
+    @Override
+    public @Nullable ContraptionRaycastHit raycastContraptionDetailed(Entity entity, Vec3 rayStart, Vec3 rayEnd, float partialTicks) {
+        if (!(entity instanceof AbstractContraptionEntity contraptionEntity)) return null;
+
+        Contraption contraption = contraptionEntity.getContraption();
+        if (contraption == null) return null;
+
+        Map<BlockPos, StructureTemplate.StructureBlockInfo> blocks = contraption.getBlocks();
+
+        Vec3 closestHitWorld = null;
+        AABB closestHitBox = null;
+        float closestSampleTick = partialTicks;
+        double closestDistSq = Double.MAX_VALUE;
+
+        for (int i = 0; i < ROTATION_SAMPLES; i++) {
+            float sampleTick = ROTATION_SAMPLES == 1
+                    ? partialTicks
+                    : SAMPLE_START + (SAMPLE_END - SAMPLE_START) * (float) i / (ROTATION_SAMPLES - 1);
+
+            for (Map.Entry<BlockPos, StructureTemplate.StructureBlockInfo> entry : blocks.entrySet()) {
+                BlockPos pos = entry.getKey();
+                BlockState state = entry.getValue().state();
+                if (state.isAir()) continue;
+
+                Vec3 localCenter = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+                Vec3 worldCenter = contraptionEntity.toGlobalVector(localCenter, sampleTick);
+
+                AABB hitBox = new AABB(
+                        worldCenter.x - 0.5, worldCenter.y - 0.5, worldCenter.z - 0.5,
+                        worldCenter.x + 0.5, worldCenter.y + 0.5, worldCenter.z + 0.5
+                ).inflate(HIT_MARGIN);
+
+                Vec3 hitPoint;
+                if (hitBox.contains(rayStart)) {
+                    hitPoint = rayStart;
+                } else {
+                    Optional<Vec3> clipped = hitBox.clip(rayStart, rayEnd);
+                    if (clipped.isEmpty()) continue;
+                    hitPoint = clipped.get();
+                }
+
+                double distSq = hitPoint.distanceToSqr(rayStart);
+                if (distSq < closestDistSq) {
+                    closestDistSq = distSq;
+                    closestHitWorld = hitPoint;
+                    closestHitBox = hitBox;
+                    closestSampleTick = sampleTick;
+                }
+            }
+        }
+
+        if (closestHitWorld == null) return null;
+
+        // Which face of the AABB was hit? Closest face plane to the hit point.
+        Direction face = closestHitFace(closestHitBox, closestHitWorld);
+        Vec3 localHit = contraptionEntity.toLocalVector(closestHitWorld, closestSampleTick);
+        return new ContraptionRaycastHit(closestHitWorld, face, localHit);
+    }
+
+    /** Return the Direction of the AABB face nearest to {@code point} (expected to lie on one of the six faces). */
+    private static Direction closestHitFace(AABB box, Vec3 point) {
+        double distMinX = Math.abs(point.x - box.minX);
+        double distMaxX = Math.abs(point.x - box.maxX);
+        double distMinY = Math.abs(point.y - box.minY);
+        double distMaxY = Math.abs(point.y - box.maxY);
+        double distMinZ = Math.abs(point.z - box.minZ);
+        double distMaxZ = Math.abs(point.z - box.maxZ);
+
+        double min = distMinX;
+        Direction face = Direction.WEST;
+        if (distMaxX < min) { min = distMaxX; face = Direction.EAST; }
+        if (distMinY < min) { min = distMinY; face = Direction.DOWN; }
+        if (distMaxY < min) { min = distMaxY; face = Direction.UP; }
+        if (distMinZ < min) { min = distMinZ; face = Direction.NORTH; }
+        if (distMaxZ < min) {                 face = Direction.SOUTH; }
+        return face;
     }
 
     @Override

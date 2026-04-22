@@ -1,6 +1,7 @@
 package com.yyon.grapplinghook.integration;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.EntityHitResult;
@@ -48,6 +49,35 @@ public interface ContraptionIntegration {
      *         if the ray misses every block in the structure.
      */
     @Nullable Vec3 raycastContraption(Entity contraption, Vec3 rayStart, Vec3 rayEnd, float partialTicks);
+
+    /**
+     * Detailed version of {@link #raycastContraption} — returns the world hit,
+     * the face hit, and the contraption-local hit point in one shot. Used by the
+     * multi-space rope raycaster so the rope's wrap logic can place a
+     * contraption-anchored bend whose native position is in the contraption's
+     * local frame.
+     *
+     * <p>Default implementation returns {@code null} (no detailed info); callers
+     * should fall back to {@link #raycastContraption} + recomputing face/local on
+     * the Core side if they get {@code null} from this.</p>
+     */
+    default @Nullable ContraptionRaycastHit raycastContraptionDetailed(
+            Entity contraption, Vec3 rayStart, Vec3 rayEnd, float partialTicks) {
+        return null;
+    }
+
+    /**
+     * Rich raycast result for {@link #raycastContraptionDetailed}.
+     *
+     * @param worldHit world-space hit point on the contraption block's face
+     * @param face     direction of the face struck (outward-pointing normal)
+     * @param localHit contraption-local position of the same point, obtained via
+     *                 {@link #worldToLocal} at the sample partialTick that
+     *                 produced this hit — stored in {@link com.yyon.grapplinghook.physics.RopeBend}
+     *                 as the bend's {@code nativePos} so subsequent ticks can
+     *                 re-resolve world coords via {@link #localToWorld}
+     */
+    record ContraptionRaycastHit(Vec3 worldHit, Direction face, Vec3 localHit) {}
 
     /** World-space point → contraption-local, incorporating current rotation + translation. */
     Vec3 worldToLocal(Entity contraption, Vec3 worldPoint, float partialTicks);
