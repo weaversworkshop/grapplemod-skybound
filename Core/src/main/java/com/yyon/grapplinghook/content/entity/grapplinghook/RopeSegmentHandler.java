@@ -155,11 +155,16 @@ public class RopeSegmentHandler {
 
 	/**
 	 * Tolerance used when shrinking redundant-raycast endpoints away from bend
-	 * positions. Bends sit {@code BEND_OFFSET} off real block surfaces; without
-	 * margin the redundant raycast can graze the block at its endpoints and report
-	 * a false hit even when the rope physically has room to straighten.
+	 * positions. Bends already sit {@code BEND_OFFSET} off real block surfaces,
+	 * so the redundancy raycast naturally starts/ends outside blocks — a large
+	 * shrink was actually producing false-negative hits: when a segment neighbor
+	 * was at an adjacent block corner, shrinking the ray 0.07 past the neighbor
+	 * could make the ray miss a block that the full-length segment would clip,
+	 * triggering a spurious removal. The next tick {@code movingHostSweep}
+	 * re-inserted at the same position (full-length raycast does hit), producing
+	 * visible rope churn. Keep the shrink to a small numerical-safety value.
 	 */
-	private static final double SHRINK_MARGIN = 0.07;
+	private static final double SHRINK_MARGIN = 0.01;
 
 	/**
 	 * Minimum deflection cosine for a new bend to be kept. Bends that would
@@ -604,11 +609,11 @@ public class RopeSegmentHandler {
 		GrappleMod.LOGGER.info("[HookDbg] insertContraptionBend entityId={} class={} hostPos={} worldBendPos={} nativeHit={}",
 				c.entityId(), entity.getClass().getName(), entity.position(), worldBendPos, hit.worldHit());
 
-		// Jitter-dedup: skip if an adjacent bend on the same contraption is already
-		// near this position. Prevents per-tick bend accumulation when the host
-		// pose drifts slightly and the rope raycast keeps clipping the same face.
-		if (isCloseMovingHostBend(index - 1, c, worldBendPos)
-				|| isCloseMovingHostBend(index, c, worldBendPos)) {
+		// Global duplicate-position dedup: reject if ANY existing bend on the
+		// same contraption is within the dedup radius. Scans the full list to
+		// avoid the cascade where redundantBendSweep removes a bend at one
+		// index and movingHostSweep re-inserts a near-identical one at another.
+		if (hasAnyContraptionBendNear(c.entityId(), worldBendPos)) {
 			return null;
 		}
 
@@ -674,19 +679,21 @@ public class RopeSegmentHandler {
 		Vec worldBendPos = new Vec(worldBend.x, worldBend.y, worldBend.z);
 		Vec nativePos = new Vec(plotBendPos.x, plotBendPos.y, plotBendPos.z);
 
-		// Jitter-dedup: skip if an adjacent bend on the same sub-level is already
-		// near this position. Sub-level pose updates can nudge the rope by fractions
-		// of a block each tick; without dedup, movingHostSweep would insert a
-		// near-identical bend every tick on the same face, eating rope length and
-		// yanking the player in.
-		if (isCloseMovingHostBend(index - 1, sl, worldBendPos)
-				|| isCloseMovingHostBend(index, sl, worldBendPos)) {
-			return null;
-		}
 		// Guard against stacking on the hook's own attachment block: if the hook
 		// is anchored to this sub-level's hit block, any "bend" we'd place there
 		// is really just the hook's own position, not a real wrap.
 		if (index == 1 && hookAttachedToSubLevelBlock(sl.subLevelId(), plotBlock)) {
+			return null;
+		}
+		// Global duplicate-position dedup: if ANY existing sublevel bend on the
+		// same sub-level is already within the dedup radius of this world
+		// position, skip. The adjacent-only dedup above misses bends that slip
+		// in at non-adjacent indices (redundantBendSweep removes a bend at idx
+		// N, movingHostSweep inserts a near-identical bend at a different index
+		// next pass). That's the main driver of the "rope explodes to 70+
+		// bends" cascade — same physical positions reappearing at different
+		// list indices every tick.
+		if (hasAnySubLevelBendNear(sl.subLevelId(), worldBendPos)) {
 			return null;
 		}
 
@@ -698,24 +705,38 @@ public class RopeSegmentHandler {
 		return worldBendPos;
 	}
 
-	/**
-	 * True if the bend at {@code index} is on the same moving host as {@code space}
-	 * and within {@link #MOVING_HOST_DEDUP_RADIUS} of {@code candidateWorldPos}.
-	 * Used to reject jitter-driven duplicate bend insertions.
-	 */
-	private boolean isCloseMovingHostBend(int index, AnchorSpace space, Vec candidateWorldPos) {
-		if (index < 0 || index >= this.bends.size()) return false;
-		RopeBend bend = this.bends.get(index);
-		if (!bend.space.equals(space)) return false;
-		return bend.worldPos.sub(candidateWorldPos).length() < MOVING_HOST_DEDUP_RADIUS;
-	}
-
 	/** True if the hook is anchored to the given plot block on the given sub-level. */
 	private boolean hookAttachedToSubLevelBlock(java.util.UUID subLevelId, BlockPos plotBlock) {
 		if (plotBlock == null) return false;
 		return this.hookEntity.attachment() instanceof HookAttachment.SubLevelBlock slb
 				&& slb.subLevelId().equals(subLevelId)
 				&& slb.plotBlock().equals(plotBlock);
+	}
+
+	/**
+	 * True if any existing bend on {@code subLevelId} is within
+	 * {@link #MOVING_HOST_DEDUP_RADIUS} world-space blocks of {@code candidateWorldPos}.
+	 * Scans the full bend list — the adjacent-only check misses cases where
+	 * {@code redundantBendSweep} removes a bend then {@code movingHostSweep}
+	 * re-inserts a near-identical one at a different index in the next pass.
+	 */
+	private boolean hasAnySubLevelBendNear(java.util.UUID subLevelId, Vec candidateWorldPos) {
+		for (RopeBend b : this.bends) {
+			if (!(b.space instanceof AnchorSpace.SubLevel sl)) continue;
+			if (!sl.subLevelId().equals(subLevelId)) continue;
+			if (b.worldPos.sub(candidateWorldPos).length() < MOVING_HOST_DEDUP_RADIUS) return true;
+		}
+		return false;
+	}
+
+	/** Same global-scan dedup for contraption bends. */
+	private boolean hasAnyContraptionBendNear(int entityId, Vec candidateWorldPos) {
+		for (RopeBend b : this.bends) {
+			if (!(b.space instanceof AnchorSpace.Contraption c)) continue;
+			if (c.entityId() != entityId) continue;
+			if (b.worldPos.sub(candidateWorldPos).length() < MOVING_HOST_DEDUP_RADIUS) return true;
+		}
+		return false;
 	}
 
 	private boolean isMicroBend(Vec a, Vec b, Vec c) {

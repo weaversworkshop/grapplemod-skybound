@@ -1301,36 +1301,30 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	}
 
 	/**
-	 * World-space point where the rope meets the holder — approximately the hand.
-	 * Used as the player-endpoint for rope segmenting so wrap/unwrap math operates on
-	 * the same line the renderer draws. The visual rope starts at the rendered hand
-	 * (with partial-tick interpolation + swing animation); this method returns the
-	 * tick-boundary version using the third-person hand-offset formula, which is
-	 * deterministic and server-safe (no camera / FOV / animation state).
+	 * World-space point where the rope meets the holder — the holder's eye
+	 * position. Used as the player-endpoint for rope wrap/unwrap physics.
 	 *
-	 * <p>Close to but not identical to the rendered hand in first-person (which uses
-	 * a camera-dependent offset). The discrepancy is a fraction of a block — close
-	 * enough that wrap detection aligns with what the player sees.</p>
+	 * <p>This was briefly computed from the holder's hand position to match the
+	 * renderer's visible rope line. Hand-based placement aligns bend positions
+	 * with rendered geometry more precisely (~fraction of a block), but the
+	 * hand sits at roughly torso height — often inside the apparent AABB of a
+	 * sub-level the player is standing on. Rope segments adjacent to a hand
+	 * endpoint inside a ship's bbox unavoidably cross ship blocks, producing
+	 * cascading bend insertions that were hard to prevent without breaking
+	 * legitimate wraps. Eye sits above the block the player is standing on,
+	 * which sidesteps the whole class of issues. v1 used eye for years with
+	 * no reports of bend-alignment problems; the tiny visual discrepancy
+	 * against the rendered hand-based rope is negligible in practice.</p>
 	 *
-	 * <p>Falls back to the hook's own position if the holder has been cleared
-	 * (e.g. shooter disconnected) — callers of rope updates shouldn't be running
-	 * in that state, but the guard avoids a NullPointer.</p>
+	 * <p>Method name kept for continuity with call sites. Falls back to the
+	 * hook's own position if the holder has been cleared (e.g. shooter
+	 * disconnected) — callers of rope updates shouldn't be running in that
+	 * state, but the guard avoids a NullPointer.</p>
 	 */
 	public Vec getRopeOriginAtHolder() {
 		Entity shooter = this.shootingEntity;
-		if (!(shooter instanceof LivingEntity holder)) {
-			return shooter != null ? Vec.positionVec(shooter) : Vec.positionVec(this);
-		}
-
-		int handDirection = (holder.getMainArm() == HumanoidArm.RIGHT ? 1 : -1)
-				* (this.isHeldInMainHand() ? 1 : -1);
-		Vec handOffset = new Vec(
-				handDirection * -0.36,
-				-0.65 + (holder.isCrouching() ? -0.1875 : 0.0),
-				0.6);
-		handOffset = handOffset.rotateYaw(holder.yBodyRot * (Math.PI / 180.0));
-		handOffset.y += holder.getEyeHeight();
-		return Vec.positionVec(holder).add(handOffset);
+		if (shooter == null) return Vec.positionVec(this);
+		return Vec.positionVec(shooter).add(new Vec(0, shooter.getEyeHeight(), 0));
 	}
 
 	/**
