@@ -20,11 +20,6 @@ public class NetworkManager {
         ServerPlayNetworking.registerGlobalReceiver(type, C2SPayloadProcessor::process);
     }
 
-    // Type registration is bi-side. The corresponding client-side receiver
-    // registration (ClientPlayNetworking.registerGlobalReceiver) lives in
-    // ClientNetworkReceivers — we must keep ClientPlayNetworking references
-    // off the dedicated-server code path, or Fabric's transformer refuses to
-    // load PlayPayloadHandler in a SERVER environment and boot fails.
     public static <T extends S2CPayload> void registerS2CPacket(CustomPacketPayload.Type<T> type, StreamCodec<RegistryFriendlyByteBuf, T> codec) {
         PayloadTypeRegistry.playS2C().register(type, codec);
     }

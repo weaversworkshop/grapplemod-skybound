@@ -3,10 +3,18 @@ package com.weaversworkshop.grapplemod.compat.sable;
 import com.mojang.logging.LogUtils;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
+import com.yyon.grapplinghook.integration.SubLevelIntegration;
+import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
 import java.util.HashMap;
@@ -80,7 +88,7 @@ public class SableCompatModule {
         for (UUID fresh : current) {
             if (!previous.contains(fresh)) {
                 try {
-                    GrapplinghookEntity.onSubLevelAssembled(fresh, level);
+                    onSubLevelAssembled(fresh, level);
                 } catch (Throwable err) {
                     LOGGER.error("[Grapple <-> Sable] onSubLevelAssembled({}) threw", fresh, err);
                 }
@@ -92,7 +100,7 @@ public class SableCompatModule {
                 LOGGER.info("[Grapple <-> Sable] Sub-level disappeared from container: uuid={} — dispatching disassembly handler",
                         gone);
                 try {
-                    GrapplinghookEntity.onSubLevelDisassembled(gone, level);
+                    onSubLevelDisassembled(gone, level);
                 } catch (Throwable err) {
                     LOGGER.error("[Grapple <-> Sable] onSubLevelDisassembled({}) threw", gone, err);
                 }
@@ -109,4 +117,64 @@ public class SableCompatModule {
     public static SableCompatModule getInstance() { return instance; }
 
     public SableSubLevelIntegration integration() { return integration; }
+
+    private static void onSubLevelAssembled(UUID subLevelId, Level level) {
+        SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+        if (!sli.isSubLevelLoaded(subLevelId)) return;
+        if (level.isClientSide) return;
+
+        for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
+            if (hook == null || !hook.isAlive()) continue;
+            if (hook.level() != level) continue;
+            if (!(hook.attachment() instanceof HookAttachment.Block block)) continue;
+
+            BlockPos plotBlock = sli.getCapturedPlotPos(subLevelId, block.pos());
+            if (plotBlock == null) {
+                LOGGER.info("[Grapple <-> Sable] onSubLevelAssembled uuid={} hookId={} worldBlock={} — getCapturedPlotPos returned null; leaving hook on static block.",
+                        subLevelId, hook.getId(), block.pos());
+                continue;
+            }
+
+            Vec3 plotHit = sli.worldToPlot(subLevelId, block.subHitPoint(), GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
+            LOGGER.info("[Grapple <-> Sable] onSubLevelAssembled uuid={} hookId={} migrating Block→SubLevelBlock: worldBlock={} → plotBlock={} plotHit={}",
+                    subLevelId, hook.getId(), block.pos(), plotBlock, plotHit);
+            hook.reattachToSubLevel(subLevelId, plotBlock, plotHit);
+        }
+    }
+
+    private static void onSubLevelDisassembled(UUID subLevelId, Level level) {
+        if (level.isClientSide) return;
+        SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+
+        for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
+            try {
+                if (hook == null || !hook.isAlive()) continue;
+                if (hook.level() != level) continue;
+                if (!(hook.attachment() instanceof HookAttachment.SubLevelBlock slb)) continue;
+                if (!slb.subLevelId().equals(subLevelId)) continue;
+
+                BlockPos plotBlock = slb.plotBlock();
+                Vec3 plotCenter = new Vec3(plotBlock.getX() + 0.5, plotBlock.getY() + 0.5, plotBlock.getZ() + 0.5);
+                Vec3 worldCenter = sli.plotToWorld(subLevelId, plotCenter, GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
+                BlockPos candidate = BlockPos.containing(worldCenter);
+
+                BlockState state = level.getBlockState(candidate);
+                Vec3 hookPos = hook.position();
+                double dist = GrapplinghookEntity.distancePointToAabb(hookPos, new AABB(candidate));
+
+                if (state.isAir() || dist > GrapplinghookEntity.DISASSEMBLY_REANCHOR_MAX_DIST) {
+                    hook.detachFromContraption();
+                    continue;
+                }
+
+                hook.reattachToBlock(candidate, hookPos);
+            } catch (Throwable err) {
+                LOGGER.error("[Grapple <-> Sable] onSubLevelDisassembled: reattach for hook {} failed; detaching as fallback",
+                        hook != null ? hook.getId() : "null", err);
+                if (hook != null && hook.isAlive()) {
+                    try { hook.detachFromContraption(); } catch (Throwable ignored) {}
+                }
+            }
+        }
+    }
 }

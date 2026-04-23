@@ -81,7 +81,7 @@ import static com.yyon.grapplinghook.content.registry.CustomizationProperties.*;
 
 public class GrapplinghookEntity extends ThrowableItemProjectile implements IExtendedSpawnPacketEntity {
 
-	private static final float CONTRAPTION_PARTIAL_TICKS = 1.0f;
+	public static final float CONTRAPTION_PARTIAL_TICKS = 1.0f;
 
 	public Entity shootingEntity = null;
 	public int shootingEntityID;
@@ -772,126 +772,9 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
 	}
 
-	public static void onContraptionAssembled(Entity contraptionEntity) {
-		ContraptionIntegration ci = GrappleModIntegrations.getContraptionIntegration();
-		if (ci == null || !ci.isContraption(contraptionEntity)) return;
+	public static final double DISASSEMBLY_REANCHOR_MAX_DIST = 1.47;
 
-		Level contraptionLevel = contraptionEntity.level();
-		if (contraptionLevel.isClientSide) return;
-
-		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
-			if (hook == null || !hook.isAlive()) continue;
-			if (hook.level() != contraptionLevel) continue;
-			if (!(hook.attachment instanceof HookAttachment.Block block)) continue;
-
-			BlockPos localKey = ci.getCapturedLocalPos(contraptionEntity, block.pos());
-			if (localKey == null) continue;
-
-			Vec3 localOffset = ci.worldToLocal(contraptionEntity, block.subHitPoint(), CONTRAPTION_PARTIAL_TICKS);
-
-			hook.reattachToContraption(contraptionEntity, localOffset, localKey);
-		}
-	}
-
-	private static final double DISASSEMBLY_REANCHOR_MAX_DIST = 1.47;
-
-	public static void onContraptionDisassembled(Entity contraptionEntity) {
-		ContraptionIntegration ci = GrappleModIntegrations.getContraptionIntegration();
-		if (ci == null || !ci.isContraption(contraptionEntity)) return;
-
-		Level level = contraptionEntity.level();
-		if (level.isClientSide) return;
-
-		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
-			if (hook == null || !hook.isAlive()) continue;
-			if (hook.level() != level) continue;
-			if (!(hook.attachment instanceof HookAttachment.ContraptionBlock cb)) continue;
-			if (cb.entity() != contraptionEntity) continue;
-
-			BlockPos localBlock = cb.localBlockPos();
-			if (localBlock == null) {
-				hook.detachFromContraption();
-				continue;
-			}
-
-			Vec3 localCenter = new Vec3(localBlock.getX() + 0.5, localBlock.getY() + 0.5, localBlock.getZ() + 0.5);
-			Vec3 worldCenter = ci.localToWorld(contraptionEntity, localCenter, CONTRAPTION_PARTIAL_TICKS);
-			BlockPos candidate = BlockPos.containing(worldCenter);
-
-			BlockState state = level.getBlockState(candidate);
-			Vec3 hookPos = hook.position();
-			double dist = distancePointToAabb(hookPos, new AABB(candidate));
-
-			if (state.isAir() || dist > DISASSEMBLY_REANCHOR_MAX_DIST) {
-				hook.detachFromContraption();
-				continue;
-			}
-
-			hook.reattachToBlock(candidate, hookPos);
-		}
-	}
-
-	public static void onSubLevelAssembled(UUID subLevelId, Level level) {
-		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-		if (!sli.isSubLevelLoaded(subLevelId)) return;
-		if (level.isClientSide) return;
-
-		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
-			if (hook == null || !hook.isAlive()) continue;
-			if (hook.level() != level) continue;
-			if (!(hook.attachment instanceof HookAttachment.Block block)) continue;
-
-			BlockPos plotBlock = sli.getCapturedPlotPos(subLevelId, block.pos());
-			if (plotBlock == null) {
-				GrappleMod.LOGGER.info("[Grapple <-> Sable] onSubLevelAssembled uuid={} hookId={} worldBlock={} — getCapturedPlotPos returned null; leaving hook on static block.",
-						subLevelId, hook.getId(), block.pos());
-				continue;
-			}
-
-			Vec3 plotHit = sli.worldToPlot(subLevelId, block.subHitPoint(), CONTRAPTION_PARTIAL_TICKS);
-			GrappleMod.LOGGER.info("[Grapple <-> Sable] onSubLevelAssembled uuid={} hookId={} migrating Block→SubLevelBlock: worldBlock={} → plotBlock={} plotHit={}",
-					subLevelId, hook.getId(), block.pos(), plotBlock, plotHit);
-			hook.reattachToSubLevel(subLevelId, plotBlock, plotHit);
-		}
-	}
-
-	public static void onSubLevelDisassembled(UUID subLevelId, Level level) {
-		if (level.isClientSide) return;
-		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-
-		for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
-			try {
-				if (hook == null || !hook.isAlive()) continue;
-				if (hook.level() != level) continue;
-				if (!(hook.attachment instanceof HookAttachment.SubLevelBlock slb)) continue;
-				if (!slb.subLevelId().equals(subLevelId)) continue;
-
-				BlockPos plotBlock = slb.plotBlock();
-				Vec3 plotCenter = new Vec3(plotBlock.getX() + 0.5, plotBlock.getY() + 0.5, plotBlock.getZ() + 0.5);
-				Vec3 worldCenter = sli.plotToWorld(subLevelId, plotCenter, CONTRAPTION_PARTIAL_TICKS);
-				BlockPos candidate = BlockPos.containing(worldCenter);
-
-				BlockState state = level.getBlockState(candidate);
-				Vec3 hookPos = hook.position();
-				double dist = distancePointToAabb(hookPos, new AABB(candidate));
-
-				if (state.isAir() || dist > DISASSEMBLY_REANCHOR_MAX_DIST) {
-					hook.detachFromContraption();
-					continue;
-				}
-
-				hook.reattachToBlock(candidate, hookPos);
-			} catch (Throwable err) {
-				GrappleMod.LOGGER.error("[Grapple <-> Sable] onSubLevelDisassembled: reattach for hook {} failed; detaching as fallback",
-						hook != null ? hook.getId() : "null", err);
-				if (hook != null && hook.isAlive()) {
-					try { hook.detachFromContraption(); } catch (Throwable ignored) {}
-				}
-			}
-		}
-	}
-
-	private boolean tryMigrateLostSubLevelAnchor(SubLevelIntegration sli, HookAttachment.SubLevelBlock slb) {
+private boolean tryMigrateLostSubLevelAnchor(SubLevelIntegration sli, HookAttachment.SubLevelBlock slb) {
 		Vec3 lastWorldPos;
 		try {
 			lastWorldPos = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
@@ -956,7 +839,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
 	}
 
-	private static double distancePointToAabb(Vec3 p, AABB box) {
+	public static double distancePointToAabb(Vec3 p, AABB box) {
 		double dx = Math.max(Math.max(box.minX - p.x, 0), p.x - box.maxX);
 		double dy = Math.max(Math.max(box.minY - p.y, 0), p.y - box.maxY);
 		double dz = Math.max(Math.max(box.minZ - p.z, 0), p.z - box.maxZ);
