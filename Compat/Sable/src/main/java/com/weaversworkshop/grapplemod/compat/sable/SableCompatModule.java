@@ -2,6 +2,7 @@ package com.weaversworkshop.grapplemod.compat.sable;
 
 import com.mojang.logging.LogUtils;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
+import com.yyon.grapplinghook.content.entity.grapplinghook.HookHostDisassembly;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
@@ -12,8 +13,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
@@ -143,38 +142,15 @@ public class SableCompatModule {
     }
 
     private static void onSubLevelDisassembled(UUID subLevelId, Level level) {
-        if (level.isClientSide) return;
         SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
 
-        for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
-            try {
-                if (hook == null || !hook.isAlive()) continue;
-                if (hook.level() != level) continue;
-                if (!(hook.attachment() instanceof HookAttachment.SubLevelBlock slb)) continue;
-                if (!slb.subLevelId().equals(subLevelId)) continue;
-
-                BlockPos plotBlock = slb.plotBlock();
-                Vec3 plotCenter = new Vec3(plotBlock.getX() + 0.5, plotBlock.getY() + 0.5, plotBlock.getZ() + 0.5);
-                Vec3 worldCenter = sli.plotToWorld(subLevelId, plotCenter, GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
-                BlockPos candidate = BlockPos.containing(worldCenter);
-
-                BlockState state = level.getBlockState(candidate);
-                Vec3 hookPos = hook.position();
-                double dist = GrapplinghookEntity.distancePointToAabb(hookPos, new AABB(candidate));
-
-                if (state.isAir() || dist > GrapplinghookEntity.DISASSEMBLY_REANCHOR_MAX_DIST) {
-                    hook.detachFromContraption();
-                    continue;
-                }
-
-                hook.reattachToBlock(candidate, hookPos);
-            } catch (Throwable err) {
-                LOGGER.error("[Grapple <-> Sable] onSubLevelDisassembled: reattach for hook {} failed; detaching as fallback",
-                        hook != null ? hook.getId() : "null", err);
-                if (hook != null && hook.isAlive()) {
-                    try { hook.detachFromContraption(); } catch (Throwable ignored) {}
-                }
-            }
-        }
+        HookHostDisassembly.reanchorAfterHostGone(
+                level,
+                HookAttachment.SubLevelBlock.class,
+                slb -> slb.subLevelId().equals(subLevelId),
+                HookAttachment.SubLevelBlock::plotBlock,
+                plotCenter -> sli.plotToWorld(subLevelId, plotCenter, GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS),
+                "[Grapple <-> Sable]"
+        );
     }
 }

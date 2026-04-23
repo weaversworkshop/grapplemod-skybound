@@ -1,4 +1,4 @@
-package com.yyon.grapplinghook.client.physics.context;
+package com.yyon.grapplinghook.client.physics.controller;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.client.GrappleModClient;
@@ -7,7 +7,7 @@ import com.yyon.grapplinghook.config.GrappleModClientConfig;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.config.GrapplePropertyConfigLoader;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
-import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
+import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
 import com.yyon.grapplinghook.content.physics.PhysicsControllers;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;
 import com.yyon.grapplinghook.network.NetworkManager;
@@ -50,7 +50,7 @@ public class GrapplingHookPhysicsController {
 	private int lastTickRan = -1;
 	private int duplicates = 0;
 	
-	private final HashSet<GrapplinghookEntity> grapplehookEntities = new HashSet<>();
+	final HashSet<GrapplinghookEntity> grapplehookEntities = new HashSet<>();
 	private final HashSet<Integer> grapplehookEntityIds = new HashSet<>();
 
 	public boolean ownsHook(int hookId) { return this.grapplehookEntityIds.contains(hookId); }
@@ -73,18 +73,12 @@ public class GrapplingHookPhysicsController {
 
 	protected double playerMovementMult = 0;
 
-	private final double repelMaxPush = 0.3;
-
-	private boolean rocketKeyDown = false;
+private boolean rocketKeyDown = false;
 	private double rocketProgression;
 
-	private int ticksSinceLastWallrunSoundEffect = 0;
+	final WallRunBehavior wallrun = new WallRunBehavior(this);
 
-	private boolean isOnWall = false;
-	private Vec wallDirection = null;
-	private BlockHitResult wallrunRaytraceResult = null;
-
-	private HookCustomization custom;
+	HookCustomization custom;
 	
 	public GrapplingHookPhysicsController(int grapplehookEntityId, int holderId, Level world, HookCustomization custom) {
 		this.holderId = holderId;
@@ -394,11 +388,11 @@ public class GrapplingHookPhysicsController {
 
 		// Motor
 		if (motor)
-			this.processMotorPhysics(playerPos, facing, entity, gravity, close);
+			MotorBehavior.apply(this, playerPos, facing, entity, gravity, close);
 
 		// forcefield - does not go through this path if via ForcefieldPhysicsController
 		if (this.custom.get(FORCEFIELD_ATTACHED.get())) {
-			Vec blockPush = this.checkRepel(playerPos, entity.level());
+			Vec blockPush = RepelField.checkRepel(playerPos, entity.level());
 			blockPush.mutableScale(this.custom.get(FORCEFIELD_FORCE.get()))
 					 .mutableScale(0.5D)
 					 .mutableMultiply(0.5D, 2.0D, 0.5D);
@@ -478,184 +472,6 @@ public class GrapplingHookPhysicsController {
 			additionalVerticalMovement.mutableScale(0.66f);
 
 		return additionalVerticalMovement;
-	}
-
-	private void processMotorPhysics(Vec playerPos, Vec facing, Entity entity, Vec gravity, boolean close) {
-		boolean dopull = true;
-
-		// if only one rope is pulling and not oneropepull, disable motor
-		if (this.custom.get(DOUBLE_HOOK_ATTACHED.get()) && this.grapplehookEntities.size() == 1) {
-			boolean isdouble = true;
-			for (GrapplinghookEntity hookEntity : this.grapplehookEntities) {
-				if (!hookEntity.isInDoublePair) {
-					isdouble = false;
-					break;
-				}
-			}
-
-			if (isdouble && !this.custom.get(SINGLE_ROPE_PULL.get())) {
-				dopull = false;
-			}
-		}
-
-		Vec totalPull = new Vec(0, 0, 0);
-
-		double accel = this.custom.get(MOTOR_ACCELERATION.get()) / this.grapplehookEntities.size();
-
-		double minabssidewayspull = 999;
-
-		boolean firstpull = true;
-		boolean pullispositive = true;
-		boolean pullissameway = true;
-
-		// set all motors to maximum pull and precalculate some stuff for smart motor / smart double motor
-		for (GrapplinghookEntity hookEntity : this.grapplehookEntities) {
-			Vec hookPos = Vec.positionVec(hookEntity);//this.getPositionVector();
-			Vec anchor = hookEntity.getSegmentHandler().getClosest(hookPos);
-			Vec spherevec = playerPos.sub(anchor);
-			Vec pull = spherevec.scale(-1);
-
-			hookEntity.pull = accel;
-
-			totalPull.mutableAdd(pull.withMagnitude(accel));
-
-			pull.mutableSetMagnitude(hookEntity.pull);
-
-			// precalculate some stuff for smart double motor
-			// For smart double motor: the motors should pull left and right equally
-			// one side will be less able to pull to its side due to the angle
-			// therefore the other side should slow down in order to match and have both sides pull left/right equally
-			// the amount each should pull (the lesser of the two) is minabssidewayspull
-			if (pull.dot(facing) > 0 || this.custom.get(MOTOR_WORKS_BACKWARDS.get())) {
-				if (this.custom.get(SMART_MOTOR.get()) && this.grapplehookEntities.size() > 1) {
-					Vec facingxy = new Vec(facing.x, 0, facing.z);
-					Vec facingside = facingxy.cross(new Vec(0, 1, 0)).normalize();
-					Vec sideways = pull.project(facingside);
-					Vec currentsideways = motion.project(facingside);
-					sideways.mutableAdd(currentsideways);
-					double sidewayspull = sideways.dot(facingside);
-
-					if (Math.abs(sidewayspull) < minabssidewayspull) {
-						minabssidewayspull = Math.abs(sidewayspull);
-					}
-
-					if (firstpull) {
-						firstpull = false;
-						pullispositive = (sidewayspull >= 0);
-					} else {
-						if (pullispositive != (sidewayspull >= 0)) {
-							pullissameway = false;
-						}
-					}
-				}
-
-			}
-		}
-
-		// Smart double motor - calculate the speed each motor should pull at
-		if (this.custom.get(DOUBLE_SMART_MOTOR.get()) && this.grapplehookEntities.size() > 1) {
-			totalPull = new Vec(0, 0, 0);
-
-			for (GrapplinghookEntity hookEntity : this.grapplehookEntities) {
-				Vec hookPos = Vec.positionVec(hookEntity);
-				Vec anchor = hookEntity.getSegmentHandler().getClosest(hookPos);
-				Vec spherevec = playerPos.sub(anchor);
-				Vec pull = spherevec.scale(-1);
-				pull.mutableSetMagnitude(hookEntity.pull);
-
-				if (pull.dot(facing) > 0 || this.custom.get(MOTOR_WORKS_BACKWARDS.get())) {
-					Vec facingxy = new Vec(facing.x, 0, facing.z);
-					Vec facingside = facingxy.cross(new Vec(0, 1, 0)).normalize();
-					Vec sideways = pull.project(facingside);
-					Vec currentsideways = motion.project(facingside);
-					sideways.mutableAdd(currentsideways);
-					double sidewayspull = sideways.dot(facingside);
-
-					if (pullissameway) {
-						// only 1 rope pulls
-						if (Math.abs(sidewayspull) > minabssidewayspull+0.05) {
-							hookEntity.pull = 0;
-						}
-					} else {
-						hookEntity.pull = hookEntity.pull * minabssidewayspull / Math.abs(sidewayspull);
-					}
-					totalPull.mutableAdd(pull.withMagnitude(hookEntity.pull));
-				} else {
-					if (hookEntity.isInDoublePair) {
-						if (!this.custom.get(SINGLE_ROPE_PULL.get())) {
-							dopull = false;
-						}
-					}
-				}
-			}
-		}
-
-		// smart motor - angle of motion = angle facing
-		// match angle (the ratio of pulling upwards to pulling sideways)
-		// between the motion (after pulling and gravity) vector and the facing vector
-		// if double hooks, all hooks are scaled by the same amount (to prevent pulling to the left/right)
-		double pullmult = 1;
-		if (this.custom.get(SMART_MOTOR.get()) && totalPull.y > 0 && !(this.onGroundTimer > 0 || entity.onGround())) {
-			Vec pullxzvector = new Vec(totalPull.x, 0, totalPull.z);
-			double pullxz = pullxzvector.length();
-			double motionxz = motion.project(pullxzvector).dot(pullxzvector.normalize());
-			double facingxz = facing.project(pullxzvector).dot(pullxzvector.normalize());
-
-			pullmult = (facingxz * (motion.y + gravity.y) - motionxz * facing.y)/(facing.y * pullxz - facingxz * totalPull.y); // (gravity.y * facingxz) / (facing.y * pullxz - facingxz * totalpull.y);
-
-			if ((facing.y * pullxz - facingxz * totalPull.y) == 0) {
-				// division by zero
-				pullmult = 9999;
-			}
-
-			double pulll = pullmult * totalPull.length();
-
-			if (pulll > this.custom.get(MOTOR_ACCELERATION.get())) {
-				pulll = this.custom.get(MOTOR_ACCELERATION.get());
-			}
-
-			if (pulll < 0) {
-				pulll = 0;
-			}
-
-			pullmult = pulll / totalPull.length();
-		}
-
-		// Prevent motor from moving too fast (motormaxspeed)
-		if (this.motion.dot(totalPull) > 0) {
-			if (this.motion.project(totalPull).length() + totalPull.scale(pullmult).length() > this.custom.get(MAX_MOTOR_SPEED.get())) {
-				pullmult = Math.max(0, (this.custom.get(MAX_MOTOR_SPEED.get()) - this.motion.project(totalPull).length()) / totalPull.length());
-			}
-		}
-
-		// sideways dampener
-		if (this.custom.get(MOTOR_DAMPENER.get()) && totalPull.length() != 0) {
-			motion = this.dampenMotion(motion, totalPull);
-		}
-
-		// actually pull with the motor
-		if (dopull) {
-			for (GrapplinghookEntity hookEntity : this.grapplehookEntities) {
-				Vec hookPos = Vec.positionVec(hookEntity);
-				Vec anchor = hookEntity.getSegmentHandler().getClosest(hookPos);
-				Vec spherevec = playerPos.sub(anchor);
-				Vec pull = spherevec.scale(-1);
-				pull.mutableSetMagnitude(hookEntity.pull * pullmult);
-
-				if (pull.dot(facing) > 0 || this.custom.get(MOTOR_WORKS_BACKWARDS.get())) {
-					if (hookEntity.pull > 0) {
-						motion.mutableAdd(pull);
-					}
-				}
-			}
-		}
-
-		// if player is at the destination, slow down
-		if (close && !(this.grapplehookEntities.size() > 1)) {
-			if (entity.horizontalCollision || entity.verticalCollision || entity.onGround()) {
-				motion.mutableScale(0.6);
-			}
-		}
 	}
 
 	public void applyCalculatedTaut(double dist, GrapplinghookEntity hookEntity) {
@@ -903,66 +719,7 @@ public class GrapplingHookPhysicsController {
 	}
 
 	
-    // repel stuff
-    public Vec checkRepel(Vec p, Level w) {
-    	Vec centerOfMass = p.add(0.0, 0.75, 0.0);
-    	Vec repelForce = new Vec(0, 0, 0);
-    	
-    	double t = (1.0 + Math.sqrt(5.0)) / 2.0;
-    	
-		BlockPos pos = BlockPos.containing(p.x, p.y, p.z);
-
-		if (hasBlock(pos, w)) {
-			repelForce.mutableAdd(0, 1, 0);
-
-		} else {
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec(-1,  t,  0), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( 1,  t,  0), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec(-1, -t,  0), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( 1, -t,  0), w));
-
-			repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( 0,  1,  t), w));
-			repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( 0, -1,  t), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( 0, -1, -t), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( 0,  1, -t), w));
-
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( t,  0, -1), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec( t,  0,  1), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec(-t,  0, -1), w));
-	    	repelForce.mutableAdd(this.castRepelForceRay(centerOfMass, new Vec(-t,  0,  1), w));
-		}
-    	
-    	if (repelForce.length() > this.repelMaxPush) {
-    		repelForce.mutableSetMagnitude(this.repelMaxPush);
-    	}
-    	
-		return repelForce;
-	}
-    
-    public Vec castRepelForceRay(Vec origin, Vec direction, Level w) {
-    	for (double i = 0.5; i < 10; i += 0.5) {
-    		Vec v2 = direction.withMagnitude(i);
-    		BlockPos pos = BlockPos.containing(origin.x + v2.x, origin.y + v2.y, origin.z + v2.z);
-
-    		if (!this.hasBlock(pos, w))
-				continue;
-
-			Vec v3 = new Vec(pos)
-					.mutableSub(origin)
-					.add(0.5D, 0.5D, 0.5D);
-
-			return v3.mutableSetMagnitude(-1 / Math.pow(v3.length(), 2));
-    	}
-    	
-    	return new Vec(0, 0, 0);
-    }
-    
-	public boolean hasBlock(BlockPos pos, Level w) {
-    	BlockState blockstate = w.getBlockState(pos);
-    	return !blockstate.isAir();
-	}
-
-	public void receiveGrappleDetachHook(int hookid) {
+public void receiveGrappleDetachHook(int hookid) {
 		if (this.grapplehookEntityIds.contains(hookid)) {
 			this.grapplehookEntityIds.remove(hookid);
 
@@ -1008,209 +765,6 @@ public class GrapplingHookPhysicsController {
 
 		this.rocketKeyDown = true;
 		return force;
-	}
-
-
-	public Vec getNearbyWall(Vec tryFirst, Vec trySecond, double extra) {
-		float entityCollisionWidth = this.holder.getBbWidth();
-
-		Vec[] directions = new Vec[] {
-				tryFirst,
-				trySecond,
-				tryFirst.scale(-1),
-				trySecond.scale(-1)
-		};
-		
-		for (Vec direction : directions) {
-			Vec collisionRayLength = direction.withMagnitude(entityCollisionWidth/2 + extra);
-			BlockHitResult raytraceresult = GrappleModUtils.rayTraceBlocks(
-					this.holder,
-					this.holder.level(),
-					Vec.positionVec(this.holder),
-					Vec.positionVec(this.holder).add(collisionRayLength)
-			);
-
-			if (raytraceresult != null) {
-				this.wallrunRaytraceResult = raytraceresult;
-				return direction;
-			}
-		}
-		
-		return null;
-	}
-	
-	public Vec getWallDirection() {
-		Vec tryfirst = new Vec(0, 0, 0);
-		Vec trysecond = new Vec(0, 0, 0);
-		
-		if (Math.abs(this.motion.x) > Math.abs(this.motion.z)) {
-			tryfirst.x = (this.motion.x > 0) ? 1 : -1;
-			trysecond.z = (this.motion.z > 0) ? 1 : -1;
-		} else {
-			tryfirst.z = (this.motion.z > 0) ? 1 : -1;
-			trysecond.x = (this.motion.x > 0) ? 1 : -1;
-		}
-		
-		return getNearbyWall(tryfirst, trysecond, 0.05);
-	}
-	
-	public Vec getCorner(int cornernum, Vec facing, Vec sideways) {
-		Vec corner = new Vec(0,0,0);
-		if (cornernum / 2 == 0) {
-			corner.mutableAdd(facing);
-		} else {
-			corner.mutableAdd(facing.scale(-1));
-		}
-
-		if (cornernum % 2 == 0) {
-			corner.mutableAdd(sideways);
-		} else {
-			corner.mutableAdd(sideways.scale(-1));
-		}
-		return corner;
-	}
-	
-	public boolean wallNearby(double dist) {
-		float entitywidth = this.holder.getBbWidth();
-		Vec v1 = new Vec(entitywidth/2 + dist, 0, 0);
-		Vec v2 = new Vec(0, 0, entitywidth/2 + dist);
-		
-		for (int i = 0; i < 4; i++) {
-			Vec corner1 = getCorner(i, v1, v2);
-			Vec corner2 = getCorner((i + 1) % 4, v1, v2);
-			
-			BlockHitResult raytraceresult = GrappleModUtils.rayTraceBlocks(this.holder, this.holder.level(), Vec.positionVec(this.holder).add(corner1), Vec.positionVec(this.holder).add(corner2));
-			if (raytraceresult != null) {
-				return true;
-			}
-		}
-		
-		return false;
-	}
-
-	public boolean isWallRunning() {
-		double currentSpeed = Math.sqrt(Math.pow(this.motion.x, 2) + Math.pow(this.motion.z,  2));
-		if (currentSpeed <= EnchantmentValues.MIN_WALLRUN_SPEED) {
-			this.isOnWall = false;
-			return false;
-		}
-		
-		if (this.isOnWall) {
-			GrappleModClient.get().setWallrunTicks(GrappleModClient.get().getWallrunTicks() + 1);
-		}
-		
-		if (GrappleModClient.get().getWallrunTicks() < EnchantmentValues.MAX_WALLRUN_TIME) {
-			if (!(this.playerSneak)) {
-				// continue wallrun
-				if (this.isOnWall && !this.holder.onGround() && this.holder.horizontalCollision) {
-					return !this.holder.onClimbable();
-				}
-				
-				// start wallrun
-				if (GrappleModClient.get().isWallRunning(this.holder, this.motion)) {
-					this.isOnWall = true;
-					return true;
-				}
-			}
-
-			this.isOnWall = false;
-		}
-		
-		if (GrappleModClient.get().getWallrunTicks() > 0 && (this.holder.onGround() || (!this.holder.horizontalCollision && !this.wallNearby(0.2)))) {
-			this.ticksSinceLastWallrunSoundEffect = 0;
-		}
-		
-		return false;
-	}
-	
-	public boolean applyWallRun() {
-		boolean isWallRunning = this.isWallRunning();
-		
-		if (this.playerJump) {
-			if (isWallRunning)
-				return false;
-
-			this.playerJump = false;
-		}
-		
-		if (isWallRunning && !ModKeys.DETACH.get().isDown()) {
-
-			Vec wallSide = this.getWallDirection();
-
-			if (wallSide != null)
-				this.wallDirection = wallSide;
-
-			if (this.wallDirection == null)
-				return false;
-
-			if (!this.playerJump)
-				this.motion.y = 0;
-
-			// drag
-			double dragForce = EnchantmentValues.WALLRUN_DRAG;
-			double speed = this.motion.length();
-			
-			if (dragForce > speed)
-				dragForce = speed;
-			
-			Vec wallFriction = new Vec(this.motion);
-			if (wallSide != null)
-				wallFriction.removeAlong(wallSide);
-
-			wallFriction.mutableSetMagnitude(-dragForce);
-			this.motion.mutableAdd(wallFriction);
-			this.ticksSinceLastWallrunSoundEffect++;
-
-			double wallRunningSoundTime = GrappleModClientConfig.get().getWallrunVolume();
-			double wallRunningMaxSpeed = EnchantmentValues.MAX_WALLRUN_SPEED;
-			double timeLimit = speed != 0
-					? wallRunningSoundTime * 20 * wallRunningMaxSpeed / speed
-					: -1;
-
-			if (timeLimit < 0 || this.ticksSinceLastWallrunSoundEffect > timeLimit) {
-				if (this.wallrunRaytraceResult != null) {
-					BlockPos blockpos = this.wallrunRaytraceResult.getBlockPos();
-					
-					BlockState blockState = this.holder.level().getBlockState(blockpos);
-			        SoundType soundtype = blockState.getSoundType();
-
-		            this.holder.playSound(soundtype.getStepSound(), soundtype.getVolume() * 0.30F * GrappleModClientConfig.get().getWallrunVolume(), soundtype.getPitch());
-					this.ticksSinceLastWallrunSoundEffect = 0;
-				}
-			}
-		}
-		
-		// jump
-		boolean isDetachRequested = ModKeys.DETACH.get().isDown();
-		boolean shouldJump = isDetachRequested && this.isOnWall && !this.playerJump;
-		this.playerJump = isDetachRequested && this.isOnWall;
-
-		if (shouldJump && isWallRunning) {
-			GrappleModClient.get().setWallrunTicks(0);
-			Vec jump = new Vec(0, EnchantmentValues.WALLRUN_JUMP_UP_FORCE, 0);
-
-			if (this.wallDirection != null) {
-				double wallJumpSide = EnchantmentValues.WALLRUN_JUMP_SIDE_FORCE;
-				Vec wallDir = this.wallDirection.scale(-wallJumpSide);
-				jump.mutableAdd(wallDir);
-			}
-
-			this.motion.mutableAdd(jump);
-			
-			isWallRunning = false;
-
-			GrappleModClient.get().playWallrunJumpSound();
-		}
-		
-		return isWallRunning;
-	}
-	
-	public Vec wallrunPressAgainstWall() {
-		// press against wall
-		if (this.wallDirection != null) {
-			return this.wallDirection.withMagnitude(0.05);
-		}
-		return new Vec(0,0,0);
 	}
 
 	public void doDoubleJump() {
@@ -1260,6 +814,10 @@ public class GrapplingHookPhysicsController {
 
 	public boolean isRocketKeyDown() {
 		return this.rocketKeyDown;
+	}
+
+	public Vec getWallDirection() {
+		return this.wallrun.getWallDirection();
 	}
 
 	public boolean isControllerActive() {

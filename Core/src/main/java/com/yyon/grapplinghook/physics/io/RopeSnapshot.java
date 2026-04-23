@@ -1,8 +1,8 @@
 package com.yyon.grapplinghook.physics.io;
 
-import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
-import com.yyon.grapplinghook.physics.AnchorSpace;
-import com.yyon.grapplinghook.physics.RopeBend;
+import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
+import com.yyon.grapplinghook.physics.rope.AnchorSpace;
+import com.yyon.grapplinghook.physics.rope.RopeBend;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.NullableDirection;
 import com.yyon.grapplinghook.util.Vec;
@@ -112,7 +112,7 @@ public class RopeSnapshot {
             entry.putString(NBT_TOP, topVal);
             entry.putString(NBT_BOTTOM, bottomVal);
 
-            if (!(bend.space instanceof AnchorSpace.World)) {
+            if (!bend.space.isStatic()) {
                 CompoundTag spaceTag = new CompoundTag();
                 bend.space.writeToNbt(spaceTag);
                 entry.put(NBT_SPACE, spaceTag);

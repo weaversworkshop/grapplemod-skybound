@@ -15,7 +15,4 @@ public class BlankView extends SwitchableScreenView {
     public void destroy(List<AbstractWidget> widgets) {
     }
 
-    public int getContentsHeight() {
-        return 0;
-    }
 }

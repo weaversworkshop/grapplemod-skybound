@@ -47,8 +47,4 @@ public abstract class SwitchableScreenView extends ContainerObjectSelectionList.
     }
 
 
-    public static SwitchableScreenView newBlankView() {
-        return new BlankView();
-    }
-
 }

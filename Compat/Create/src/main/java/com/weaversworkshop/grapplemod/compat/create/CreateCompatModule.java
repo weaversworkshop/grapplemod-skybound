@@ -3,6 +3,7 @@ package com.weaversworkshop.grapplemod.compat.create;
 import com.mojang.logging.LogUtils;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
+import com.yyon.grapplinghook.content.entity.grapplinghook.HookHostDisassembly;
 import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
@@ -11,8 +12,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
@@ -77,35 +76,13 @@ public class CreateCompatModule {
         ContraptionIntegration ci = GrappleModIntegrations.getContraptionIntegration();
         if (ci == null || !ci.isContraption(contraptionEntity)) return;
 
-        Level level = contraptionEntity.level();
-        if (level.isClientSide) return;
-
-        for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
-            if (hook == null || !hook.isAlive()) continue;
-            if (hook.level() != level) continue;
-            if (!(hook.attachment() instanceof HookAttachment.ContraptionBlock cb)) continue;
-            if (cb.entity() != contraptionEntity) continue;
-
-            BlockPos localBlock = cb.localBlockPos();
-            if (localBlock == null) {
-                hook.detachFromContraption();
-                continue;
-            }
-
-            Vec3 localCenter = new Vec3(localBlock.getX() + 0.5, localBlock.getY() + 0.5, localBlock.getZ() + 0.5);
-            Vec3 worldCenter = ci.localToWorld(contraptionEntity, localCenter, GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
-            BlockPos candidate = BlockPos.containing(worldCenter);
-
-            BlockState state = level.getBlockState(candidate);
-            Vec3 hookPos = hook.position();
-            double dist = GrapplinghookEntity.distancePointToAabb(hookPos, new AABB(candidate));
-
-            if (state.isAir() || dist > GrapplinghookEntity.DISASSEMBLY_REANCHOR_MAX_DIST) {
-                hook.detachFromContraption();
-                continue;
-            }
-
-            hook.reattachToBlock(candidate, hookPos);
-        }
+        HookHostDisassembly.reanchorAfterHostGone(
+                contraptionEntity.level(),
+                HookAttachment.ContraptionBlock.class,
+                cb -> cb.entity() == contraptionEntity,
+                HookAttachment.ContraptionBlock::localBlockPos,
+                localCenter -> ci.localToWorld(contraptionEntity, localCenter, GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS),
+                "[Grapple <-> Create]"
+        );
     }
 }

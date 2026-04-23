@@ -1,7 +1,12 @@
 package com.yyon.grapplinghook.physics.attach;
 
+import com.yyon.grapplinghook.GrappleMod;
+import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
+import com.yyon.grapplinghook.content.entity.grapplinghook.HookAnchorMigration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
+import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.network.clientbound.GrappleAttachS2CPayload;
+import com.yyon.grapplinghook.util.Vec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -24,6 +29,19 @@ public sealed interface HookAttachment
     GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget();
 
     default @Nullable Direction ropeAnchorFace() { return null; }
+
+    /**
+     * Keeps the hook pinned to this attachment each tick. Returns {@code false} if the follow
+     * decided the hook must die (called {@code onAttachedEntityPerished}) and the caller should
+     * stop ticking. Default: no-op (static-world attachments don't need per-tick pinning).
+     */
+    default boolean follow(GrapplinghookEntity hook, SubLevelIntegration sli) { return true; }
+
+    /** The world entity this attachment follows (for {@link Entity} / {@link ContraptionBlock}), or null. */
+    default @Nullable net.minecraft.world.entity.Entity hostEntity() { return null; }
+
+    /** True if this attachment rides a moving host (entity / contraption / sub-level). */
+    default boolean attachedToMovingBody() { return false; }
 
     static Direction inferFace(BlockPos block, Vec3 hitPoint) {
         double dx = hitPoint.x - block.getX();
@@ -82,6 +100,22 @@ public sealed interface HookAttachment
         @Override public GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget() {
             return new GrappleAttachS2CPayload.GrappleAttachTarget.Entity(entityId);
         }
+
+        @Override public @Nullable net.minecraft.world.entity.Entity hostEntity() { return resolved.get(); }
+
+        @Override public boolean attachedToMovingBody() { return true; }
+
+        @Override public boolean follow(GrapplinghookEntity hook, SubLevelIntegration sli) {
+            net.minecraft.world.entity.Entity e = resolved.get();
+            if (e == null || !e.isAlive()) {
+                hook.onAttachedEntityPerished();
+                return false;
+            }
+            Vec target = Vec.positionVec(e).add(new Vec(0, e.getBbHeight() * 0.5, 0));
+            hook.setPos(target.x, target.y, target.z);
+            hook.setDeltaMovement(e.getDeltaMovement());
+            return true;
+        }
     }
 
     record ContraptionBlock(int entityId,
@@ -125,6 +159,22 @@ public sealed interface HookAttachment
             if (localBlockPos == null) return null;
             return inferFace(localBlockPos, localOffset);
         }
+
+        @Override public @Nullable net.minecraft.world.entity.Entity hostEntity() { return resolved.get(); }
+
+        @Override public boolean attachedToMovingBody() { return true; }
+
+        @Override public boolean follow(GrapplinghookEntity hook, SubLevelIntegration sli) {
+            net.minecraft.world.entity.Entity e = resolved.get();
+            if (e == null || !e.isAlive()) {
+                hook.onAttachedEntityPerished();
+                return false;
+            }
+            Vec3 worldPoint = worldHitPoint(GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
+            hook.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
+            hook.setDeltaMovement(e.getDeltaMovement());
+            return true;
+        }
     }
 
     record SubLevelBlock(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint)
@@ -140,6 +190,34 @@ public sealed interface HookAttachment
 
         @Override public @Nullable Direction ropeAnchorFace() {
             return inferFace(plotBlock, plotHitPoint);
+        }
+
+        @Override public boolean attachedToMovingBody() { return true; }
+
+        @Override public boolean follow(GrapplinghookEntity hook, SubLevelIntegration sli) {
+            try {
+                if (!sli.isSubLevelLoaded(subLevelId)) {
+                    if (!hook.level().isClientSide) {
+                        hook.onAttachedEntityPerished();
+                        return false;
+                    }
+                    return true;
+                }
+                if (!hook.level().isClientSide && !sli.isPlotBlockSolid(subLevelId, plotBlock)) {
+                    if (HookAnchorMigration.tryMigrate(hook, sli, this)) return false;
+                    hook.onAttachedEntityPerished();
+                    return false;
+                }
+                Vec3 worldPoint = worldHitPoint(GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
+                hook.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
+                hook.setDeltaMovement(0, 0, 0);
+                return true;
+            } catch (Throwable err) {
+                GrappleMod.LOGGER.error("[Grapple <-> Sable] Follow tick threw on side={} — detaching so we don't spin on this",
+                        hook.level().isClientSide ? "CLIENT" : "SERVER", err);
+                hook.onAttachedEntityPerished();
+                return false;
+            }
         }
     }
 

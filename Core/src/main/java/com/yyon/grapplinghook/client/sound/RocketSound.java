@@ -1,6 +1,6 @@
 package com.yyon.grapplinghook.client.sound;
 
-import com.yyon.grapplinghook.client.physics.context.GrapplingHookPhysicsController;
+import com.yyon.grapplinghook.client.physics.controller.GrapplingHookPhysicsController;
 import com.yyon.grapplinghook.config.GrappleModClientConfig;
 import net.minecraft.client.resources.sounds.AbstractTickableSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;

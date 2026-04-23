@@ -64,8 +64,7 @@ public class GrappleModCommonConfig extends DefaultValueTracker implements IConf
                     new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.ropeJumpCooldown, (config, val) -> config.ropeJumpCooldown = val),
                     new FieldCodec<>(ByteBufCodecs.FLOAT, conf -> conf.climbSpeed, (config, val) -> config.climbSpeed = val),
                     new FieldCodec<>(ByteBufCodecs.FLOAT, conf -> conf.enderStaffStrength, (config, val) -> config.enderStaffStrength = val),
-                    new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.enderStaffCooldown, (config, val) -> config.enderStaffCooldown = val),
-                    new FieldCodec<>(ByteBufCodecs.BOOL, conf -> conf.legacyRopeWrap, (config, val) -> config.legacyRopeWrap = val)
+                    new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.enderStaffCooldown, (config, val) -> config.enderStaffCooldown = val)
             )
     );
 
@@ -209,24 +208,5 @@ public class GrappleModCommonConfig extends DefaultValueTracker implements IConf
 
     public int getEnderStaffCooldown() {
         return this.enderStaffCooldown;
-    }
-
-
-    // Advanced / debug toggles. These sit outside the gameplay/item categories because
-    // they're escape hatches rather than day-to-day settings.
-
-    @SerialEntry @Category("item")
-    private boolean legacyRopeWrap = true;
-
-    /**
-     * Selects the pre-v2 corner-hunting rope wrap/unwrap algorithm over the new
-     * surface-walking one. Default {@code true} — the surface algorithm is
-     * structurally capable (static wrap, outside corners, multi-block protrusions)
-     * but the refinements that would make it feel as polished as the legacy
-     * algorithm are deferred (see the v2 rope plan). Flip to {@code false} to opt
-     * into the surface algorithm and help shake out the remaining rough edges.
-     */
-    public boolean useLegacyRopeWrap() {
-        return this.legacyRopeWrap;
     }
 }

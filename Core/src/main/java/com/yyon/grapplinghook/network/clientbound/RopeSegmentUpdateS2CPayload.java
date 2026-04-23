@@ -2,7 +2,7 @@ package com.yyon.grapplinghook.network.clientbound;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.network.S2CPayload;
-import com.yyon.grapplinghook.physics.AnchorSpace;
+import com.yyon.grapplinghook.physics.rope.AnchorSpace;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.NullableDirection;
 import com.yyon.grapplinghook.util.Vec;

@@ -3,7 +3,7 @@ package com.yyon.grapplinghook.physics.raycast;
 import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.integration.SubLevelIntegration;
-import com.yyon.grapplinghook.physics.AnchorSpace;
+import com.yyon.grapplinghook.physics.rope.AnchorSpace;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
 import net.minecraft.core.BlockPos;

@@ -5,8 +5,8 @@ import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
 import com.yyon.grapplinghook.content.entity.grapplinghook.IExtendedSpawnPacketEntity;
-import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
-import com.yyon.grapplinghook.client.physics.context.GrapplingHookPhysicsController;
+import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
+import com.yyon.grapplinghook.client.physics.controller.GrapplingHookPhysicsController;
 import com.yyon.grapplinghook.content.physics.PhysicsControllers;
 import com.yyon.grapplinghook.network.clientbound.AddExtraEntityDataS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.DetachSingleHookS2CPayload;
@@ -108,25 +108,11 @@ public final class ClientNetworkReceivers {
             RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
             if (payload.shouldAdd()) {
                 com.yyon.grapplinghook.util.Vec worldPos = payload.pos();
-                com.yyon.grapplinghook.util.Vec nativePos = worldPos;
-                if (payload.space() instanceof com.yyon.grapplinghook.physics.AnchorSpace.SubLevel sl) {
-                    com.yyon.grapplinghook.integration.SubLevelIntegration sli =
-                            com.yyon.grapplinghook.integration.GrappleModIntegrations.getSubLevelIntegration();
-                    if (sli.isSubLevelLoaded(sl.subLevelId())) {
-                        net.minecraft.world.phys.Vec3 plot = sli.worldToPlot(
-                                sl.subLevelId(), worldPos.toVec3d(), 1.0f);
-                        nativePos = new com.yyon.grapplinghook.util.Vec(plot.x, plot.y, plot.z);
-                    }
-                } else if (payload.space() instanceof com.yyon.grapplinghook.physics.AnchorSpace.Contraption c) {
-                    Entity host = world.getEntity(c.entityId());
-                    if (host != null && host.isAlive()) {
-                        net.minecraft.world.phys.Vec3 local = com.yyon.grapplinghook.integration.GrappleModIntegrations
-                                .getContraptionIntegration()
-                                .worldToLocal(host, worldPos.toVec3d(), 1.0f);
-                        nativePos = new com.yyon.grapplinghook.util.Vec(local.x, local.y, local.z);
-                    }
-                }
-                com.yyon.grapplinghook.physics.RopeBend bend = new com.yyon.grapplinghook.physics.RopeBend(
+                net.minecraft.world.phys.Vec3 native_ = payload.space().worldToNative(worldPos.toVec3d(), 1.0f, world);
+                com.yyon.grapplinghook.util.Vec nativePos = (native_ != null)
+                        ? new com.yyon.grapplinghook.util.Vec(native_.x, native_.y, native_.z)
+                        : worldPos;
+                com.yyon.grapplinghook.physics.rope.RopeBend bend = new com.yyon.grapplinghook.physics.rope.RopeBend(
                         payload.space(),
                         worldPos,
                         nativePos,

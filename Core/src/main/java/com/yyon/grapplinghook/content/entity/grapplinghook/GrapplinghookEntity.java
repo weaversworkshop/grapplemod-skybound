@@ -4,10 +4,8 @@ import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.api.GrappleModServerEvents;
 import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.client.api.GrappleModClientEvents;
-import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.content.registry.internal.*;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;
-import com.yyon.grapplinghook.integration.ContraptionIntegration;
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.network.NetworkManager;
@@ -16,8 +14,9 @@ import com.yyon.grapplinghook.network.clientbound.GrappleAttachHookS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToEntityS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleReanchorToBlockS2CPayload;
-import com.yyon.grapplinghook.physics.AnchorSpace;
-import com.yyon.grapplinghook.physics.RopeBend;
+import com.yyon.grapplinghook.physics.rope.AnchorSpace;
+import com.yyon.grapplinghook.physics.rope.RopeBend;
+import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
 import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
@@ -25,7 +24,6 @@ import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.Direction.Axis;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
@@ -36,28 +34,21 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.entity.projectile.ThrowableItemProjectile;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Vector3f;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static com.yyon.grapplinghook.content.registry.CustomizationProperties.*;
@@ -245,114 +236,14 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			this.setDeltaMovement(0, 0, 0);
 		}
 
-		if (this.attachment == null && !this.level().isClientSide) {
-			Vec3 rayStart = this.position();
-			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
-			@Nullable EntityHitResult contraptionHit = GrappleModIntegrations
-					.getContraptionIntegration()
-					.findContraptionAlongRay(this.level(), rayStart, rayEnd);
-			if (contraptionHit != null) {
-				this.onHit(contraptionHit);
-			}
-		}
-
-		// Sable's ProjectileUtilMixin patches vanilla projectile collision; if its ray crosses a tracked sub-level AABB it can hang the server.
 		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-		boolean anySubLevelCrossed = false;
-		if (this.attachment == null) {
-			Vec3 rayStart = this.position();
-			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
-
-			UUID[] bestUuid = { null };
-			SubLevelIntegration.SubLevelRaycastHit[] bestHit = { null };
-			double[] bestDistSq = { Double.POSITIVE_INFINITY };
-			boolean[] crossedRef = { false };
-			boolean isServer = !this.level().isClientSide;
-
-			sli.forEachTrackedSubLevel((uuid, aabb) -> {
-				if (!aabb.clip(rayStart, rayEnd).isPresent()) return;
-				crossedRef[0] = true;
-				if (!isServer) return;
-				SubLevelIntegration.SubLevelRaycastHit hit = sli.raycastSubLevelDetailed(
-						uuid, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
-				if (hit == null) return;
-				double distSq = hit.worldHit().distanceToSqr(rayStart);
-				if (distSq < bestDistSq[0]) {
-					bestDistSq[0] = distSq;
-					bestUuid[0] = uuid;
-					bestHit[0] = hit;
-				}
-			});
-
-			anySubLevelCrossed = crossedRef[0];
-
-			if (bestHit[0] != null) {
-				this.serverAttach(
-						new HookAttachment.SubLevelBlock(bestUuid[0], bestHit[0].plotBlock(), bestHit[0].plotHit()),
-						true);
-				this.setDeltaMovement(0, 0, 0);
-				anySubLevelCrossed = false;
-			}
-		}
-
-		if (anySubLevelCrossed) {
-			this.manualProjectileStep();
+		if (HookFlightController.runPreTickScans(this, sli)) {
+			HookFlightController.manualProjectileStep(this);
 		} else {
 			super.tick();
 		}
 
-		switch (this.attachment) {
-			case null -> {}
-
-			case HookAttachment.Block ignored -> {}
-
-			case HookAttachment.Entity entityAttach -> {
-				Entity e = entityAttach.entity();
-				if (e == null || !e.isAlive()) {
-					this.onAttachedEntityPerished();
-					return;
-				}
-				Vec target = Vec.positionVec(e).add(new Vec(0, e.getBbHeight() * 0.5, 0));
-				this.setPos(target.x, target.y, target.z);
-				this.setDeltaMovement(e.getDeltaMovement());
-			}
-
-			case HookAttachment.ContraptionBlock cb -> {
-				Entity e = cb.entity();
-				if (e == null || !e.isAlive()) {
-					this.onAttachedEntityPerished();
-					return;
-				}
-				Vec3 worldPoint = cb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
-				this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
-				this.setDeltaMovement(e.getDeltaMovement());
-			}
-
-			case HookAttachment.SubLevelBlock slb -> {
-				try {
-					if (!sli.isSubLevelLoaded(slb.subLevelId())) {
-						if (!this.level().isClientSide) {
-							this.onAttachedEntityPerished();
-							return;
-						}
-						break;
-					}
-					if (!this.level().isClientSide && !sli.isPlotBlockSolid(slb.subLevelId(), slb.plotBlock())) {
-						if (this.tryMigrateLostSubLevelAnchor(sli, slb)) return;
-						this.onAttachedEntityPerished();
-						return;
-					}
-					Vec3 worldPoint = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
-					this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
-					this.setDeltaMovement(0, 0, 0);
-				} catch (Throwable err) {
-					GrappleMod.LOGGER.error("[Grapple <-> Sable] Follow tick threw on side={} — detaching so we don't spin on this",
-							this.level().isClientSide ? "CLIENT" : "SERVER", err);
-					this.onAttachedEntityPerished();
-					return;
-				}
-			}
-		}
+		if (this.attachment != null && !this.attachment.follow(this, sli)) return;
 
 		boolean hookIsDetached = !this.level().isClientSide &&
 				                  this.shootingEntity != null &&
@@ -367,43 +258,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		return this.attachment != null;
 	}
 
-	private void manualProjectileStep() {
-		Vec3 delta = this.getDeltaMovement();
-		Vec3 start = this.position();
-		Vec3 end = start.add(delta);
-
-		EntityHitResult entityHit = ProjectileUtil.getEntityHitResult(
-				this.level(), this, start, end,
-				this.getBoundingBox().expandTowards(delta).inflate(1.0),
-				e -> !e.isSpectator() && e.isAlive() && e.isPickable());
-
-		BlockHitResult blockHit = GrappleModUtils.rayTraceBlocks(this, this.level(), new Vec(start), new Vec(end));
-
-		HitResult hit = null;
-		if (entityHit != null && blockHit != null) {
-			double entityDistSq = entityHit.getLocation().distanceToSqr(start);
-			double blockDistSq = blockHit.getLocation().distanceToSqr(start);
-			hit = entityDistSq < blockDistSq ? entityHit : blockHit;
-		} else if (entityHit != null) {
-			hit = entityHit;
-		} else if (blockHit != null) {
-			hit = blockHit;
-		}
-
-		if (hit != null) {
-			this.onHit(hit);
-			if (this.isRemoved()) return;
-			if (this.attachment != null) return;
-		}
-
-		this.setPos(end.x, end.y, end.z);
-
-		float drag = this.isInWater() ? 0.8F : 0.99F;
-		double gravity = this.getGravity();
-		this.setDeltaMovement(delta.x * drag, (delta.y - gravity) * drag, delta.z * drag);
-	}
-
-	private void onAttachedEntityPerished() {
+	public void onAttachedEntityPerished() {
 		GrappleMod.LOGGER.warn("Attached entity has perished ...");
 		if (!this.level().isClientSide && this.shootingEntityID != 0) {
 			GrappleModUtils.sendToCorrectClient(
@@ -422,109 +277,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	@Override
 	protected void onHit(HitResult hit) {
-		if (this.level().isClientSide) return;
-
-		if (this.attachment != null ||
-			this.shootingEntity == null || this.shootingEntityID == 0 || !this.shootingEntity.isAlive() ||
-			this.tickCount < 1 ||
-			hit == null
-		) {
-			return;
-		}
-
-		Vec vec3d = Vec.positionVec(this);
-		Vec vec3d1 = vec3d.add(Vec.motionVec(this));
-
-		if (hit instanceof EntityHitResult && !GrappleModCommonConfig.get().doHooksAffectEntities()) {
-			this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), vec3d, vec3d1));
-			return;
-		}
-
-		BlockHitResult blockhit = hit instanceof BlockHitResult movingHit
-				? movingHit
-				: null;
-
-		if (blockhit != null) {
-			BlockPos blockpos = blockhit.getBlockPos();
-			BlockState block = this.level().getBlockState(blockpos);
-
-			if (block.is(ModTags.HOOK_BREAKS)) {
-				this.level().destroyBlock(blockpos, true);
-				this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), vec3d, vec3d1));
-				return;
-			}
-		}
-
-		if (hit instanceof EntityHitResult entityHit) {
-			Entity entity = entityHit.getEntity();
-
-			if (entity == this.shootingEntity) {
-				return;
-			}
-
-			if (!GrappleModCommonConfig.get().doHooksAffectEntities()) {
-				this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), Vec.positionVec(this), Vec.positionVec(this).add(Vec.motionVec(this))));
-				return;
-			}
-
-			ContraptionIntegration contraptionIntegration = GrappleModIntegrations.getContraptionIntegration();
-			if (contraptionIntegration.isContraption(entity)) {
-				Vec3 rayStart = new Vec3(vec3d.x, vec3d.y, vec3d.z);
-				Vec3 rayEnd   = new Vec3(vec3d1.x, vec3d1.y, vec3d1.z);
-
-				Vec3 precisePoint = contraptionIntegration.raycastContraption(
-						entity, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
-
-				if (precisePoint != null) {
-					Vec3 localOffset = contraptionIntegration.worldToLocal(
-							entity, precisePoint, CONTRAPTION_PARTIAL_TICKS);
-					Vec3 backToWorld = contraptionIntegration.localToWorld(
-							entity, localOffset, CONTRAPTION_PARTIAL_TICKS);
-					GrappleMod.LOGGER.info(
-							"[Grapple] CREATE-path attach: entity={} id={} entity.pos={} precisePointWorld={} localOffset={} localToWorld(localOffset)={}",
-							entity.getClass().getSimpleName(), entity.getId(), entity.position(),
-							precisePoint, localOffset, backToWorld);
-
-					this.serverAttach(
-							new HookAttachment.ContraptionBlock(entity, localOffset, null),
-							true);
-					return;
-				}
-
-				this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), vec3d, vec3d1));
-				return;
-			}
-
-			this.serverAttach(new HookAttachment.Entity(entity), true);
-
-			GrappleMod.LOGGER.debug("Attached to a new entity: {}", entity.getId());
-
-		} else if (blockhit != null) {
-			BlockPos blockpos = blockhit.getBlockPos();
-			Vec3 hitPoint = hit.getLocation();
-
-			boolean looksLikePlotCoord = Math.abs(blockpos.getX()) > 10_000_000
-					|| Math.abs(blockpos.getZ()) > 10_000_000;
-			if (looksLikePlotCoord) {
-				SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-				UUID subLevelId = sli.findSubLevelForPlotBlock(blockpos);
-				if (subLevelId != null) {
-					this.serverAttach(
-							new HookAttachment.SubLevelBlock(subLevelId, blockpos, hitPoint),
-							true);
-					return;
-				}
-				GrappleMod.LOGGER.warn("[Grapple <-> Sable] Plot-coord BlockHitResult but no sub-level claims block {} — falling back to plain Block attach (rope may misrender)",
-						blockpos);
-			}
-
-			this.serverAttach(
-					new HookAttachment.Block(blockpos, hitPoint, blockhit.getDirection()),
-					false);
-
-		} else {
-			GrappleMod.LOGGER.warn("Unknown collision type when handling hook hit? Not an Entity or a Block.");
-		}
+		HookHitDispatcher.dispatch(this, hit);
 	}
 
 
@@ -614,73 +367,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				Vec.positionVec(this).sub(Vec.positionVec(this.shootingEntity)).length() >
 						this.customization.get(MAGNET_RADIUS.get());
 
-		if (shouldAttactMagnet) handleMagnetAttraction();
-	}
-
-	private void handleMagnetAttraction() {
-		if (this.foundBlock) return;
-
-		Vec playerpos = Vec.positionVec(this.shootingEntity);
-		Vec pos = Vec.positionVec(this);
-
-		if (this.magnetBlock == null && this.prevPos != null) {
-
-			HashMap<BlockPos, Boolean> cachedPositions = new HashMap<>();
-			Vec vector = pos.sub(this.prevPos);
-
-			if (vector.length() > 0) {
-				Vec normvector = vector.normalize();
-
-				for (int i = 0; i < vector.length(); i++) {
-					double dist = this.prevPos.sub(playerpos).length();
-					int radius = (int) dist / 4;
-
-					Optional<BlockPos> optFound = this.checkForMagnetTargetsNearby(this.prevPos, cachedPositions);
-
-					if (optFound.isEmpty()) {
-						this.wasInAir = true;
-						this.prevPos.mutableAdd(normvector);
-						continue;
-					}
-
-					BlockPos found = optFound.get();
-
-					Vec distvec = new Vec(found.getX(), found.getY(), found.getZ());
-					distvec.mutableSub(prevPos);
-					if (distvec.length() < radius) {
-						this.setPosRaw(prevPos.x, prevPos.y, prevPos.z);
-						pos = this.prevPos;
-						this.magnetBlock = found;
-
-						break;
-					}
-
-					this.prevPos.mutableAdd(normvector);
-				}
-			}
-		}
-
-		if (magnetBlock != null) {
-			BlockState blockstate = this.level().getBlockState(magnetBlock);
-			VoxelShape BB = blockstate.getCollisionShape(this.level(), magnetBlock);
-
-			Vec blockvec = new Vec(magnetBlock.getX() + (BB.max(Axis.X) + BB.min(Axis.X)) / 2, magnetBlock.getY() + (BB.max(Axis.Y) + BB.min(Axis.Y)) / 2, magnetBlock.getZ() + (BB.max(Axis.Z) + BB.min(Axis.Z)) / 2);
-			Vec newvel = blockvec.sub(pos);
-
-			double l = newvel.length();
-
-			newvel.withMagnitude(this.getSpeed());
-
-			this.setDeltaMovement(newvel.x, newvel.y, newvel.z);
-
-			if (l < 0.2) {
-				this.serverAttach(
-						new HookAttachment.Block(magnetBlock, blockvec.toVec3d(), Direction.UP),
-						false);
-			}
-		}
-
-		prevPos = pos;
+		if (shouldAttactMagnet) HookMagnetBehavior.handleMagnetAttraction(this);
 	}
 
 
@@ -772,49 +459,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
 	}
 
-	public static final double DISASSEMBLY_REANCHOR_MAX_DIST = 1.47;
-
-private boolean tryMigrateLostSubLevelAnchor(SubLevelIntegration sli, HookAttachment.SubLevelBlock slb) {
-		Vec3 lastWorldPos;
-		try {
-			lastWorldPos = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
-		} catch (Throwable ignored) {
-			lastWorldPos = this.position();
-		}
-		BlockPos worldCandidate = BlockPos.containing(lastWorldPos);
-
-		UUID[] winner = { null };
-		BlockPos[] winnerPlotBlock = { null };
-		final Vec3 probePoint = lastWorldPos;
-		sli.forEachTrackedSubLevel((uuid, aabb) -> {
-			if (winner[0] != null) return;
-			if (uuid.equals(slb.subLevelId())) return;
-			if (!aabb.contains(probePoint)) return;
-			BlockPos plotBlock = sli.worldToPlotBlock(uuid, probePoint, CONTRAPTION_PARTIAL_TICKS);
-			if (sli.isPlotBlockSolid(uuid, plotBlock)) {
-				winner[0] = uuid;
-				winnerPlotBlock[0] = plotBlock;
-			}
-		});
-
-		if (winner[0] != null) {
-			Vec3 newPlotHit = sli.worldToPlot(winner[0], lastWorldPos, CONTRAPTION_PARTIAL_TICKS);
-			GrappleMod.LOGGER.info("[Grapple <-> Sable] Sub-level anchor migrated hookId={} {} → {} (plotBlock {})",
-					this.getId(), slb.subLevelId(), winner[0], winnerPlotBlock[0]);
-			this.reattachToSubLevel(winner[0], winnerPlotBlock[0], newPlotHit);
-			return true;
-		}
-
-		BlockState worldState = this.level().getBlockState(worldCandidate);
-		double dist = distancePointToAabb(this.position(), new AABB(worldCandidate));
-		if (!worldState.isAir() && dist <= DISASSEMBLY_REANCHOR_MAX_DIST) {
-			GrappleMod.LOGGER.info("[Grapple <-> Sable] Sub-level anchor lost, falling back to world block for hookId={} at {}",
-					this.getId(), worldCandidate);
-			this.reattachToBlock(worldCandidate, lastWorldPos);
-			return true;
-		}
-		return false;
-	}
 
 	public void reattachToSubLevel(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint) {
 		if (this.level().isClientSide) return;
@@ -839,14 +483,7 @@ private boolean tryMigrateLostSubLevelAnchor(SubLevelIntegration sli, HookAttach
 		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
 	}
 
-	public static double distancePointToAabb(Vec3 p, AABB box) {
-		double dx = Math.max(Math.max(box.minX - p.x, 0), p.x - box.maxX);
-		double dy = Math.max(Math.max(box.minY - p.y, 0), p.y - box.maxY);
-		double dz = Math.max(Math.max(box.minZ - p.z, 0), p.z - box.maxZ);
-		return Math.sqrt(dx * dx + dy * dy + dz * dz);
-	}
-
-	public void reattachToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
+public void reattachToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
 		if (this.level().isClientSide) return;
 
 		this.setAttachment(new HookAttachment.Block(blockPos, hookWorldPos, null));
@@ -901,58 +538,7 @@ private boolean tryMigrateLostSubLevelAnchor(SubLevelIntegration sli, HookAttach
         this.thisPos = new Vec(x, y, z);
 	}
 
-	public Optional<BlockPos> checkForMagnetTargetsNearby(Vec center, HashMap<BlockPos, Boolean> cachedPositions) {
-    	int radius = (int) Math.floor(this.customization.get(MAGNET_RADIUS.get()));
-
-    	BlockPos closestValidPos = null;
-    	double closestDistance = 0;
-
-		int pX = (int) center.x;
-		int pY = (int) center.y;
-		int pZ = (int) center.z;
-
-    	for (int x = pX - radius; x <= pX + radius; x++) {
-        	for (int y = pY - radius; y <= pY + radius; y++) {
-            	for (int z = pZ - radius; z <= pZ + radius; z++) {
-
-			    	BlockPos pos = new BlockPos(x, y, z);
-					if (!this.checkIfCollidingWithBlock(pos, cachedPositions))
-						continue;
-
-					Vec distvec = new Vec(pos.getX(), pos.getY(), pos.getZ());
-					distvec.mutableSub(center);
-
-					double dist = distvec.length();
-					if (closestValidPos == null || dist < closestDistance) {
-						closestValidPos = pos;
-						closestDistance = dist;
-					}
-				}
-	    	}
-    	}
-
-		return Optional.ofNullable(closestValidPos);
-	}
-
-	public boolean checkIfCollidingWithBlock(BlockPos pos, HashMap<BlockPos, Boolean> cachedPositions) {
-		if(cachedPositions.containsKey(pos))
-			return cachedPositions.get(pos);
-
-		boolean canAttach = false;
-		BlockState blockState = this.level().getBlockState(pos);
-
-		if (this.canAttachToBlock(blockState) && !blockState.isAir()) {
-			VoxelShape collider = blockState.getCollisionShape(this.level(), pos);
-
-			if (!collider.isEmpty())
-				canAttach = true;
-		}
-
-		cachedPositions.put(pos, canAttach);
-		return canAttach;
-	}
-
-	private boolean canAttachToBlock(BlockState blockState) {
+	boolean canAttachToBlock(BlockState blockState) {
 		return this.level().getGameRules().getBoolean(ModGamerules.USE_LIMITED_HOOK)
 				? blockState.is(ModTags.LIMITED_HOOK_ALLOWED)
 				: !blockState.is(ModTags.HOOK_DISALLOWED);
@@ -1006,16 +592,11 @@ private boolean tryMigrateLostSubLevelAnchor(SubLevelIntegration sli, HookAttach
 	}
 
 	public @Nullable Entity attachedWorldEntity() {
-		return switch (this.attachment) {
-			case HookAttachment.Entity e -> e.entity();
-			case HookAttachment.ContraptionBlock cb -> cb.entity();
-			case null, default -> null;
-		};
+		return this.attachment != null ? this.attachment.hostEntity() : null;
 	}
 
 	public boolean isAttachedToMovingBody() {
-		return this.attachedWorldEntity() != null
-				|| this.attachment instanceof HookAttachment.SubLevelBlock;
+		return this.attachment != null && this.attachment.attachedToMovingBody();
 	}
 
 	public @Nullable HookAttachment attachment() { return this.attachment; }

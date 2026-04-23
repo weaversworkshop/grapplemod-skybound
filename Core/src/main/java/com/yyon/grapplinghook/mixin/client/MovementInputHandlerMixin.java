@@ -2,9 +2,9 @@ package com.yyon.grapplinghook.mixin.client;
 
 import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.client.physics.ClientPhysicsControllerTracker;
-import com.yyon.grapplinghook.client.physics.context.AirFrictionPhysicsController;
-import com.yyon.grapplinghook.client.physics.context.ForcefieldPhysicsController;
-import com.yyon.grapplinghook.client.physics.context.GrapplingHookPhysicsController;
+import com.yyon.grapplinghook.client.physics.controller.AirFrictionPhysicsController;
+import com.yyon.grapplinghook.client.physics.controller.ForcefieldPhysicsController;
+import com.yyon.grapplinghook.client.physics.controller.GrapplingHookPhysicsController;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.Input;
 import net.minecraft.client.player.LocalPlayer;

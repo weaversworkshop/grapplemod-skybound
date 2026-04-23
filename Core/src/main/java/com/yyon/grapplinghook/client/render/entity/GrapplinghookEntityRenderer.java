@@ -6,7 +6,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
-import com.yyon.grapplinghook.content.entity.grapplinghook.RopeSegmentHandler;
+import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
 import com.yyon.grapplinghook.content.registry.CustomizationProperties;
 import com.yyon.grapplinghook.content.registry.internal.ModDataComponents;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;

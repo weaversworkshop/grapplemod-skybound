@@ -2,7 +2,7 @@ package com.yyon.grapplinghook.mixin.client;
 
 import com.mojang.authlib.GameProfile;
 import com.yyon.grapplinghook.client.GrappleModClient;
-import com.yyon.grapplinghook.client.physics.context.GrapplingHookPhysicsController;
+import com.yyon.grapplinghook.client.physics.controller.GrapplingHookPhysicsController;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.world.entity.player.Player;

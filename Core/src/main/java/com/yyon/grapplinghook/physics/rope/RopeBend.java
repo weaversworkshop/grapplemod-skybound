@@ -1,4 +1,4 @@
-package com.yyon.grapplinghook.physics;
+package com.yyon.grapplinghook.physics.rope;
 
 import com.yyon.grapplinghook.util.Vec;
 import net.minecraft.core.Direction;

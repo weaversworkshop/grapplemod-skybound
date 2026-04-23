@@ -1,4 +1,4 @@
-package com.yyon.grapplinghook.client.physics.context;
+package com.yyon.grapplinghook.client.physics.controller;
 
 import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
@@ -123,7 +123,7 @@ public class AirFrictionPhysicsController extends GrapplingHookPhysicsController
 			this.applySlidingFriction();
 		}
 
-		boolean wallrun = this.applyWallRun();
+		boolean wallrun = this.wallrun.apply();
 
 		if (!isSliding && !this.wasSliding) {
 
@@ -155,7 +155,7 @@ public class AirFrictionPhysicsController extends GrapplingHookPhysicsController
 						this.motion.mutableSetMagnitude(EnchantmentValues.MAX_WALLRUN_SPEED);
 					}
 				}
-				additionalMotion.mutableAdd(this.wallrunPressAgainstWall());
+				additionalMotion.mutableAdd(this.wallrun.pressAgainstWall());
 
 			} else {
 				double max_motion = GrappleModCommonConfig.get().getMaxStrafeSpeedInAir();

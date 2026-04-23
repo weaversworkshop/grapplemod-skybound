@@ -49,7 +49,6 @@ import java.util.Optional;
  */
 public class GrappleMod implements ModInitializer {
 
-
     public static final String MOD_ID = "grapplemod";
     public static final Logger LOGGER = LogManager.getLogger();
 
@@ -74,26 +73,22 @@ public class GrappleMod implements ModInitializer {
 
         this.serverFeatures = new ServerFeatures();
 
-        // I assume this is needed before items.
         ModDataComponents.bump();
 
         ModArmourMaterials.registerAllMaterials();
         ModEnchantments.registerImmutable();
 
         ModBlocks.registerAllBlocks();
-        ModItems.registerAllItems();  // Items must always be registered after blocks.
+        ModItems.registerAllItems();
         ModEntities.registerAllEntities();
         ModBlockEntities.registerAllBlockEntities();
         ModAdvancementTriggers.registerAllTriggers();
 
         CustomizationProperties.registerAll();
-        CustomizationCategories.registerAll(); // Categories must always go after items + properties.
+        CustomizationCategories.registerAll();
 
-        // Some stuff should be re-registered when a world loads I think? Dynamic registries are strange.
         ModEnchantments.registerRuntime();
 
-        // Some things don't need "registering" but are static so they still
-        // need loading. Load them now for reliability.
         ModMenus.bump();
         ModTags.bump();
         ModGamerules.bump();
@@ -117,8 +112,7 @@ public class GrappleMod implements ModInitializer {
         GrappleModCommonConfig.HANDLER.defaults().saveDefaults();
         GrappleModCommonConfig.HANDLER.load();
 
-        GrappleModCommonConfig.resetConfigFromServer(); // ensure that the config being used is the client-side one.
-        //todo: ModItems.invalidateCreativeTabCache(); on save / reload.
+        GrappleModCommonConfig.resetConfigFromServer();
     }
 
     private void queueCommandRegistration() {
@@ -140,8 +134,6 @@ public class GrappleMod implements ModInitializer {
             GrappleMod.LOGGER.error("Unable to register datapacks! This mod technically doesn't exist!!");
             return;
         }
-
-        //todo: update simplified & no-enchants to use new vanilla enchant definitions.
 
         ModContainer container = cont.get();
         GrappleModUtils.registerPack("simplified", Component.translatable("pack.grapplemod.simplified"), container, ResourcePackActivationType.NORMAL);

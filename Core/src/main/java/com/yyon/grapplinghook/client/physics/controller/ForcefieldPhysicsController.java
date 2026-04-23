@@ -1,4 +1,4 @@
-package com.yyon.grapplinghook.client.physics.context;
+package com.yyon.grapplinghook.client.physics.controller;
 
 import com.yyon.grapplinghook.content.physics.PhysicsControllers;
 import com.yyon.grapplinghook.util.Vec;
@@ -40,7 +40,7 @@ public class ForcefieldPhysicsController extends GrapplingHookPhysicsController 
 
 		this.applyPlayerMovement();
 
-		Vec blockPush = this.checkRepel(playerPos, entity.level())
+		Vec blockPush = RepelField.checkRepel(playerPos, entity.level())
 				            .mutableScale(0.5D)
 				            .multiply(0.5D, 2.0D, 0.5D);
 		this.motion.mutableAdd(blockPush);

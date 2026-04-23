@@ -19,34 +19,7 @@ public final class WrapEdgeFinder {
 
     private static final double SILHOUETTE_PROBE = 0.01;
 
-    private static final double PINCH_CLEARANCE = 0.12;
-
     private WrapEdgeFinder() {}
-
-    public record WrapResult(Vec bendPoint, Direction hitFace, Direction wrapFace) {}
-
-    public static @Nullable WrapResult findWrap(BlockGetter level, BlockPos blockPos, Vec3 hitPoint,
-                                                Direction hitFace, Vec3 rayEnd) {
-        BlockState state = level.getBlockState(blockPos);
-        VoxelShape shape = state.getCollisionShape(level, blockPos);
-        if (shape.isEmpty()) return null;
-
-        List<AABB> worldBoxes = new ArrayList<>();
-        for (AABB local : shape.toAabbs()) {
-            worldBoxes.add(local.move(blockPos.getX(), blockPos.getY(), blockPos.getZ()));
-        }
-
-        AABB hitBox = findBoxContainingHit(worldBoxes, hitPoint, hitFace);
-        if (hitBox == null) return null;
-
-        List<Direction> rankedCandidates = rankedWrapFaces(level, blockPos, hitBox, hitFace, hitPoint, rayEnd, worldBoxes);
-        for (Direction wrapFace : rankedCandidates) {
-            Vec bendPoint = computeBendPoint(hitBox, hitFace, wrapFace, hitPoint, rayEnd);
-            if (isBendNearPinch(level, blockPos, bendPoint)) continue;
-            return new WrapResult(bendPoint, hitFace, wrapFace);
-        }
-        return null;
-    }
 
     public static @Nullable AABB findBoxContainingHit(List<AABB> boxes, Vec3 hitPoint, Direction hitFace) {
         double tolerance = 1e-4;
@@ -129,34 +102,6 @@ public final class WrapEdgeFinder {
             }
         }
 
-        return false;
-    }
-
-    static boolean isBendNearPinch(BlockGetter level, BlockPos ourPos, Vec bendPoint) {
-        AABB probe = new AABB(
-                bendPoint.x - PINCH_CLEARANCE, bendPoint.y - PINCH_CLEARANCE, bendPoint.z - PINCH_CLEARANCE,
-                bendPoint.x + PINCH_CLEARANCE, bendPoint.y + PINCH_CLEARANCE, bendPoint.z + PINCH_CLEARANCE);
-
-        int xMin = (int) Math.floor(probe.minX);
-        int yMin = (int) Math.floor(probe.minY);
-        int zMin = (int) Math.floor(probe.minZ);
-        int xMax = (int) Math.floor(probe.maxX);
-        int yMax = (int) Math.floor(probe.maxY);
-        int zMax = (int) Math.floor(probe.maxZ);
-
-        for (int x = xMin; x <= xMax; x++) {
-            for (int y = yMin; y <= yMax; y++) {
-                for (int z = zMin; z <= zMax; z++) {
-                    if (x == ourPos.getX() && y == ourPos.getY() && z == ourPos.getZ()) continue;
-                    BlockState state = level.getBlockState(new BlockPos(x, y, z));
-                    VoxelShape shape = state.getCollisionShape(level, new BlockPos(x, y, z));
-                    if (shape.isEmpty()) continue;
-                    for (AABB local : shape.toAabbs()) {
-                        if (local.move(x, y, z).intersects(probe)) return true;
-                    }
-                }
-            }
-        }
         return false;
     }
 

@@ -18,7 +18,7 @@ import org.jetbrains.annotations.NotNull;
  * We swap the hook's anchor target onto the contraption entity <em>without</em>
  * tearing down the physics controller. Sending the full
  * {@link GrappleAttachS2CPayload} instead would trigger the client to rebuild
- * its {@link com.yyon.grapplinghook.client.physics.context.GrapplingHookPhysicsController},
+ * its {@link com.yyon.grapplinghook.client.physics.controller.GrapplingHookPhysicsController},
  * which in turn disables the old controller and fires a
  * {@link com.yyon.grapplinghook.network.serverbound.HaltCustomPhysicsC2SPayload}
  * back — killing the very hook we just reanchored.</p>
