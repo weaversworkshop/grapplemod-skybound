@@ -22,7 +22,11 @@ public sealed interface HookAttachment
                 HookAttachment.ContraptionBlock,
                 HookAttachment.SubLevelBlock {
 
+    double SURFACE_OFFSET = 0.08;
+
     Vec3 worldHitPoint(float partialTicks);
+
+    default Vec3 ropeAnchorPoint(float partialTicks) { return worldHitPoint(partialTicks); }
 
     default HookAttachment refreshed(Level level) { return this; }
 
@@ -43,6 +47,8 @@ public sealed interface HookAttachment
     /** True if this attachment rides a moving host (entity / contraption / sub-level). */
     default boolean attachedToMovingBody() { return false; }
 
+    default boolean rendersViaExplicitAnchor() { return false; }
+
     static Direction inferFace(BlockPos block, Vec3 hitPoint) {
         double dx = hitPoint.x - block.getX();
         double dy = hitPoint.y - block.getY();
@@ -61,6 +67,14 @@ public sealed interface HookAttachment
     record Block(BlockPos pos, Vec3 subHitPoint, @Nullable Direction sideHit)
             implements HookAttachment {
         @Override public Vec3 worldHitPoint(float partialTicks) { return subHitPoint; }
+        @Override public Vec3 ropeAnchorPoint(float partialTicks) {
+            Direction face = ropeAnchorFace();
+            if (face == null) return subHitPoint;
+            return subHitPoint.add(
+                    face.getStepX() * SURFACE_OFFSET,
+                    face.getStepY() * SURFACE_OFFSET,
+                    face.getStepZ() * SURFACE_OFFSET);
+        }
         @Override public GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget() {
             return new GrappleAttachS2CPayload.GrappleAttachTarget.Block(pos);
         }
@@ -143,6 +157,19 @@ public sealed interface HookAttachment
                     .localToWorld(e, localOffset, partialTicks);
         }
 
+        @Override public Vec3 ropeAnchorPoint(float partialTicks) {
+            var e = resolved.get();
+            if (e == null) return Vec3.ZERO;
+            Direction face = ropeAnchorFace();
+            if (face == null) return worldHitPoint(partialTicks);
+            Vec3 offsetLocal = localOffset.add(
+                    face.getStepX() * SURFACE_OFFSET,
+                    face.getStepY() * SURFACE_OFFSET,
+                    face.getStepZ() * SURFACE_OFFSET);
+            return GrappleModIntegrations.getContraptionIntegration()
+                    .localToWorld(e, offsetLocal, partialTicks);
+        }
+
         @Override public HookAttachment refreshed(Level level) {
             var cached = resolved.get();
             if (cached != null && cached.isAlive()) return this;
@@ -164,6 +191,8 @@ public sealed interface HookAttachment
 
         @Override public boolean attachedToMovingBody() { return true; }
 
+        @Override public boolean rendersViaExplicitAnchor() { return true; }
+
         @Override public boolean follow(GrapplinghookEntity hook, SubLevelIntegration sli) {
             net.minecraft.world.entity.Entity e = resolved.get();
             if (e == null || !e.isAlive()) {
@@ -182,6 +211,17 @@ public sealed interface HookAttachment
         @Override public Vec3 worldHitPoint(float partialTicks) {
             return GrappleModIntegrations.getSubLevelIntegration()
                     .plotToWorld(subLevelId, plotHitPoint, partialTicks);
+        }
+
+        @Override public Vec3 ropeAnchorPoint(float partialTicks) {
+            Direction face = ropeAnchorFace();
+            if (face == null) return worldHitPoint(partialTicks);
+            Vec3 offsetPlot = plotHitPoint.add(
+                    face.getStepX() * SURFACE_OFFSET,
+                    face.getStepY() * SURFACE_OFFSET,
+                    face.getStepZ() * SURFACE_OFFSET);
+            return GrappleModIntegrations.getSubLevelIntegration()
+                    .plotToWorld(subLevelId, offsetPlot, partialTicks);
         }
         @Override public GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget() {
             return new GrappleAttachS2CPayload.GrappleAttachTarget.SubLevel(

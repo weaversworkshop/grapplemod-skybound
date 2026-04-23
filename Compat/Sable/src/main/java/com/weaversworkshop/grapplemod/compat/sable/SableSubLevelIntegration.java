@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import dev.ryanhcode.sable.companion.math.BoundingBox3dc;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
+import dev.ryanhcode.sable.sublevel.ClientSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.plot.LevelPlot;
 import net.minecraft.core.BlockPos;
@@ -392,7 +393,7 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
             return plotPoint;
         }
         try {
-            return t.subLevel.logicalPose().transformPosition(plotPoint);
+            return renderablePose(t.subLevel).transformPosition(plotPoint);
         } catch (Throwable err) {
             LOGGER.warn("[Grapple <-> Sable] plotToWorld threw for uuid={} — sub-level may be in teardown; returning identity.",
                     subLevelId, err);
@@ -405,11 +406,19 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         Tracked t = tracked.get(subLevelId);
         if (t == null || t.subLevel.isRemoved()) return worldPoint;
         try {
-            return t.subLevel.logicalPose().transformPositionInverse(worldPoint);
+            return renderablePose(t.subLevel).transformPositionInverse(worldPoint);
         } catch (Throwable err) {
             LOGGER.warn("[Grapple <-> Sable] worldToPlot threw for uuid={}", subLevelId, err);
             return worldPoint;
         }
+    }
+
+    private static Pose3dc renderablePose(SubLevel sub) {
+        if (sub instanceof ClientSubLevel client) {
+            Pose3dc running = client.getInterpolator().getInterpolatedPose();
+            if (running != null) return running;
+        }
+        return sub.logicalPose();
     }
 
     @Override

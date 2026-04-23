@@ -571,17 +571,10 @@ public void reattachToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
 	}
 
 	public Vec getRopeAnchorHookPos() {
-		Vec pos = Vec.positionVec(this);
-		if (this.attachment == null) return pos;
-		Direction face = this.attachment.ropeAnchorFace();
-		if (face == null) return pos;
-		return pos.add(new Vec(
-				face.getStepX() * ROPE_ANCHOR_FACE_OFFSET,
-				face.getStepY() * ROPE_ANCHOR_FACE_OFFSET,
-				face.getStepZ() * ROPE_ANCHOR_FACE_OFFSET));
+		if (this.attachment == null) return Vec.positionVec(this);
+		Vec3 anchor = this.attachment.ropeAnchorPoint(CONTRAPTION_PARTIAL_TICKS);
+		return new Vec(anchor.x, anchor.y, anchor.z);
 	}
-
-	private static final double ROPE_ANCHOR_FACE_OFFSET = 0.08;
 
 	public Vec getSurfaceAttachmentDirection() {
 		return this.attachDirection;

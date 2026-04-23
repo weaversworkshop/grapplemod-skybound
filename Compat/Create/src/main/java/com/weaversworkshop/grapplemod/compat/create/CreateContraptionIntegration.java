@@ -25,7 +25,7 @@ public class CreateContraptionIntegration implements ContraptionIntegration {
 
     private static final int ROTATION_SAMPLES = 64;
 
-    private static final double HIT_MARGIN = 0.25;
+    private static final double HIT_MARGIN = 0.08;
 
     private static final float SAMPLE_START = -2.0f;
     private static final float SAMPLE_END   =  1.0f;
@@ -198,7 +198,11 @@ public class CreateContraptionIntegration implements ContraptionIntegration {
     @Override
     public Vec3 localToWorld(Entity entity, Vec3 localPoint, float partialTicks) {
         if (!(entity instanceof AbstractContraptionEntity c)) return localPoint;
-        return c.toGlobalVector(localPoint, partialTicks);
+        Vec3 rotated = c.toGlobalVector(localPoint, partialTicks);
+        double lerpX = net.minecraft.util.Mth.lerp((double) partialTicks, c.xOld, c.getX());
+        double lerpY = net.minecraft.util.Mth.lerp((double) partialTicks, c.yOld, c.getY());
+        double lerpZ = net.minecraft.util.Mth.lerp((double) partialTicks, c.zOld, c.getZ());
+        return rotated.add(lerpX - c.getX(), lerpY - c.getY(), lerpZ - c.getZ());
     }
 
     @Override

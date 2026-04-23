@@ -6,6 +6,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
 import com.yyon.grapplinghook.content.registry.CustomizationProperties;
 import com.yyon.grapplinghook.content.registry.internal.ModDataComponents;
@@ -32,12 +33,14 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
+import java.util.List;
 import java.util.function.Function;
 
 import static net.minecraft.client.renderer.RenderStateShard.*;
@@ -102,19 +105,19 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
     @Override
     public void render(T hookEntity, float entityYaw, float partialTicks, PoseStack matrix, MultiBufferSource rendertype, int packedLight) {
 		if (hookEntity == null || !hookEntity.isAlive()) return;
-		
+
 		RopeSegmentHandler ropeHandler = hookEntity.getSegmentHandler();
 
 		if(!(hookEntity.shootingEntity instanceof LivingEntity holder)) return;
 		if (!holder.isAlive()) return;
-		
+
 		// is right hand?
 		int handDirection = (holder.getMainArm() == HumanoidArm.RIGHT ? 1 : -1) * (hookEntity.isHeldInMainHand() ? 1 : -1);
-		
+
 		// attack/swing progress
 		float completion = holder.getAttackAnim(partialTicks);
 		float swingPosition = Mth.sin(Mth.sqrt(completion) * (float) Math.PI);
-		
+
 		// get the offset from the center of the head to the hand
 		boolean isFirstPerson = this.entityRenderDispatcher.options.getCameraType().isFirstPerson() && holder == Minecraft.getInstance().player;
 		Vec handOffset = isFirstPerson
@@ -125,8 +128,25 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 		handOffset.y += holder.getEyeHeight();
 		Vec handPosition = handOffset.add(Vec.partialPositionVec(holder, partialTicks));
 
-		this.drawHook(matrix, rendertype, hookEntity, ropeHandler, handPosition, handDirection, packedLight, partialTicks);
-		this.drawRope(matrix, rendertype, hookEntity, ropeHandler, handPosition, packedLight, partialTicks);
+		double dispatcherLerpX = Mth.lerp((double) partialTicks, hookEntity.xOld, hookEntity.getX());
+		double dispatcherLerpY = Mth.lerp((double) partialTicks, hookEntity.yOld, hookEntity.getY());
+		double dispatcherLerpZ = Mth.lerp((double) partialTicks, hookEntity.zOld, hookEntity.getZ());
+
+		HookAttachment attachment = hookEntity.attachment();
+		Vec renderAnchor;
+		if (attachment != null && attachment.rendersViaExplicitAnchor()) {
+			Vec3 w = attachment.worldHitPoint(partialTicks);
+			renderAnchor = new Vec(w.x, w.y, w.z);
+			matrix.translate(
+					renderAnchor.x - dispatcherLerpX,
+					renderAnchor.y - dispatcherLerpY,
+					renderAnchor.z - dispatcherLerpZ);
+		} else {
+			renderAnchor = new Vec(dispatcherLerpX, dispatcherLerpY, dispatcherLerpZ);
+		}
+
+		this.drawHook(matrix, rendertype, hookEntity, ropeHandler, handPosition, handDirection, packedLight, partialTicks, renderAnchor);
+		this.drawRope(matrix, rendertype, hookEntity, ropeHandler, handPosition, packedLight, partialTicks, renderAnchor);
 		super.render(hookEntity, entityYaw, partialTicks, matrix, rendertype, packedLight);
     }
 
@@ -165,11 +185,11 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 		return handOffset.rotateYaw(Vec.lerp(partialTicks, grappleHookHolder.yBodyRotO, grappleHookHolder.yBodyRot) * ((float)Math.PI / 180F));
 	}
 
-    private Vec getRelativeToEntity(GrapplinghookEntity hookEntity, Vec inVec, float partialTicks) {
-    	return inVec.sub(Vec.partialPositionVec(hookEntity, partialTicks));
+    private Vec getRelativeToAnchor(Vec renderAnchor, Vec inVec) {
+    	return inVec.sub(renderAnchor);
     }
 
-	public void drawHook(PoseStack matrix, MultiBufferSource renderType, GrapplinghookEntity hookEntity, RopeSegmentHandler ropeHandler, Vec handPosition, int handDirection, int packedLight, float partialTicks) {
+	public void drawHook(PoseStack matrix, MultiBufferSource renderType, GrapplinghookEntity hookEntity, RopeSegmentHandler ropeHandler, Vec handPosition, int handDirection, int packedLight, float partialTicks, Vec renderAnchor) {
 		Vec attachDirection = Vec.motionVec(hookEntity).scale(-1);
 
 		if (attachDirection.length() == 0) {
@@ -179,14 +199,13 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 
 			} else {
 
-				java.util.List<Vec> dirSegs = ropeHandler == null ? null : ropeHandler.getSegments();
+				List<Vec> dirSegs = ropeHandler == null ? null : ropeHandler.getSegments();
 				if (dirSegs == null || dirSegs.size() <= 2) {
-					attachDirection = this.getRelativeToEntity(hookEntity, new Vec(handPosition), partialTicks);
+					attachDirection = this.getRelativeToAnchor(renderAnchor, new Vec(handPosition));
 
 				} else {
 					Vec from = dirSegs.get(1);
-					Vec to = Vec.partialPositionVec(hookEntity, partialTicks);
-					attachDirection = from.sub(to);
+					attachDirection = from.sub(renderAnchor);
 				}
 			}
 		}
@@ -221,7 +240,7 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 		return new Quaternionf().rotateAxis((float) Math.toRadians(angleDegrees), axis);
 	}
 
-	public void drawRope(PoseStack poseStack, MultiBufferSource renderType, GrapplinghookEntity hookEntity, RopeSegmentHandler ropeHandler, Vec handPosition, int packedLight, float partialTicks) {
+	public void drawRope(PoseStack poseStack, MultiBufferSource renderType, GrapplinghookEntity hookEntity, RopeSegmentHandler ropeHandler, Vec handPosition, int packedLight, float partialTicks, Vec renderAnchor) {
 		poseStack.pushPose();
 		PoseStack.Pose poseEntry = poseStack.last();
 		Matrix4f poseMatrix = poseEntry.pose();
@@ -239,7 +258,7 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 		// draw rope
 		if (ropeHandler == null) {
 			// if no segmenthandler, straight line from hand to hook
-			Vec finishRelative = this.getRelativeToEntity(hookEntity, new Vec(handPosition), partialTicks);
+			Vec finishRelative = this.getRelativeToAnchor(renderAnchor, new Vec(handPosition));
 			this.drawSegment(new Vec(0,0,0), finishRelative, 1.0F, vertexBuffer, poseEntry, poseMatrix, normalMatrix, packedLight, styleId);
 
 		} else {
@@ -249,13 +268,13 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 				Vec to = segments.get(i+1);
 
 				if (i == 0)
-					from = Vec.partialPositionVec(hookEntity, partialTicks);
+					from = renderAnchor;
 
 				if (i + 2 == segments.size())
 					to = handPosition;
 
-				from = this.getRelativeToEntity(hookEntity, from, partialTicks);
-				to = this.getRelativeToEntity(hookEntity, to, partialTicks);
+				from = this.getRelativeToAnchor(renderAnchor, from);
+				to = this.getRelativeToAnchor(renderAnchor, to);
 
 				double taut = i == segments.size() - 2
 						? hookEntity.taut
@@ -265,14 +284,14 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 			}
 		}
 
-		this.drawRopeEnding(hookEntity, ropeHandler, handPosition, packedLight, partialTicks, styleId, vertexBuffer, poseEntry, poseMatrix, normalMatrix);
+		this.drawRopeEnding(hookEntity, ropeHandler, handPosition, packedLight, partialTicks, styleId, vertexBuffer, poseEntry, poseMatrix, normalMatrix, renderAnchor);
 
 		poseStack.popPose();
 	}
 
-	private void drawRopeEnding(GrapplinghookEntity hookEntity, RopeSegmentHandler ropeHandler, Vec handPosition, int packedLight, float partialTicks, RopeStyle styleId, VertexConsumer vertexBuffer, PoseStack.Pose pose, Matrix4f poseMatrix, Matrix3f normalMatrix) {
+	private void drawRopeEnding(GrapplinghookEntity hookEntity, RopeSegmentHandler ropeHandler, Vec handPosition, int packedLight, float partialTicks, RopeStyle styleId, VertexConsumer vertexBuffer, PoseStack.Pose pose, Matrix4f poseMatrix, Matrix3f normalMatrix, Vec renderAnchor) {
 		// draw tip of rope closest to hand
-		Vec hook_pos = Vec.partialPositionVec(hookEntity, partialTicks);
+		Vec hook_pos = renderAnchor;
 		java.util.List<Vec> endingSegs = ropeHandler == null ? null : ropeHandler.getSegments();
 		Vec hand_closest = endingSegs == null || endingSegs.size() <= 2
 				? hook_pos
@@ -307,7 +326,7 @@ public class GrapplinghookEntityRenderer<T extends GrapplinghookEntity> extends 
 		for (int side = 0; side < 4; side++) {
 			Vec corner = corners[side];
 			Vec normal = corner.normalize(); //.add(forward.normalize().mult(-1)).normalize();
-			Vec cornerPos = this.getRelativeToEntity(hookEntity, handPosition, partialTicks).add(corner);
+			Vec cornerPos = this.getRelativeToAnchor(renderAnchor, handPosition).add(corner);
 			vertexBuffer
 					.addVertex(poseMatrix, (float) cornerPos.x, (float) cornerPos.y, (float) cornerPos.z)
 					.setColor(255, 255, 255, 255)

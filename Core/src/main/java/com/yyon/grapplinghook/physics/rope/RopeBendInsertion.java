@@ -2,7 +2,6 @@ package com.yyon.grapplinghook.physics.rope;
 
 import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.integration.SubLevelIntegration;
-import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.physics.raycast.MultiSpaceRaycaster;
 import com.yyon.grapplinghook.physics.raycast.WrapEdgeFinder;
 import com.yyon.grapplinghook.util.Vec;
@@ -20,6 +19,7 @@ final class RopeBendInsertion {
     private static final double CONTRAPTION_BEND_OFFSET = 0.08;
     private static final double MOVING_HOST_DEDUP_RADIUS = 0.6;
     private static final double SUBLEVEL_BEND_OFFSET = 0.18;
+    private static final double MIN_SEGMENT_LEN = 0.3;
 
     private static final float CONTRAPTION_PARTIAL_TICKS = 1.0f;
 
@@ -35,6 +35,10 @@ final class RopeBendInsertion {
 
         Entity entity = handler.world.getEntity(c.entityId());
         if (entity == null) return null;
+
+        if (wouldCreateShortSegment(handler, index, worldBendPos)) {
+            return null;
+        }
 
         if (hasAnyContraptionBendNear(handler, c.entityId(), worldBendPos)) {
             return null;
@@ -89,9 +93,10 @@ final class RopeBendInsertion {
         Vec worldBendPos = new Vec(worldBend.x, worldBend.y, worldBend.z);
         Vec nativePos = new Vec(plotBendPos.x, plotBendPos.y, plotBendPos.z);
 
-        if (index == 1 && hookAttachedToSubLevelBlock(handler, sl.subLevelId(), plotBlock)) {
+        if (wouldCreateShortSegment(handler, index, worldBendPos)) {
             return null;
         }
+
         if (hasAnySubLevelBendNear(handler, sl.subLevelId(), worldBendPos)) {
             return null;
         }
@@ -100,11 +105,11 @@ final class RopeBendInsertion {
         return worldBendPos;
     }
 
-    private static boolean hookAttachedToSubLevelBlock(RopeSegmentHandler handler, UUID subLevelId, BlockPos plotBlock) {
-        if (plotBlock == null) return false;
-        return handler.hookEntity.attachment() instanceof HookAttachment.SubLevelBlock slb
-                && slb.subLevelId().equals(subLevelId)
-                && slb.plotBlock().equals(plotBlock);
+    private static boolean wouldCreateShortSegment(RopeSegmentHandler handler, int index, Vec candidateWorldPos) {
+        Vec neighborAbove = handler.bends.get(index - 1).worldPos;
+        Vec neighborBelow = handler.bends.get(index).worldPos;
+        return candidateWorldPos.sub(neighborAbove).length() < MIN_SEGMENT_LEN
+                || candidateWorldPos.sub(neighborBelow).length() < MIN_SEGMENT_LEN;
     }
 
     private static boolean hasAnySubLevelBendNear(RopeSegmentHandler handler, UUID subLevelId, Vec candidateWorldPos) {
