@@ -258,26 +258,44 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 		// Sable's ProjectileUtilMixin patches vanilla projectile collision; if its ray crosses a tracked sub-level AABB it can hang the server.
 		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
-		UUID nearSubLevel = null;
+		boolean anySubLevelCrossed = false;
 		if (this.attachment == null) {
 			Vec3 rayStart = this.position();
 			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
-			nearSubLevel = sli.findSubLevelAlongRay(rayStart, rayEnd);
 
-			if (nearSubLevel != null && !this.level().isClientSide) {
-				SubLevelIntegration.SubLevelRaycastHit detailedHit = sli.raycastSubLevelDetailed(
-						nearSubLevel, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
-				if (detailedHit != null) {
-					this.serverAttach(
-							new HookAttachment.SubLevelBlock(nearSubLevel, detailedHit.plotBlock(), detailedHit.plotHit()),
-							true);
-					this.setDeltaMovement(0, 0, 0);
-					nearSubLevel = null;
+			UUID[] bestUuid = { null };
+			SubLevelIntegration.SubLevelRaycastHit[] bestHit = { null };
+			double[] bestDistSq = { Double.POSITIVE_INFINITY };
+			boolean[] crossedRef = { false };
+			boolean isServer = !this.level().isClientSide;
+
+			sli.forEachTrackedSubLevel((uuid, aabb) -> {
+				if (!aabb.clip(rayStart, rayEnd).isPresent()) return;
+				crossedRef[0] = true;
+				if (!isServer) return;
+				SubLevelIntegration.SubLevelRaycastHit hit = sli.raycastSubLevelDetailed(
+						uuid, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
+				if (hit == null) return;
+				double distSq = hit.worldHit().distanceToSqr(rayStart);
+				if (distSq < bestDistSq[0]) {
+					bestDistSq[0] = distSq;
+					bestUuid[0] = uuid;
+					bestHit[0] = hit;
 				}
+			});
+
+			anySubLevelCrossed = crossedRef[0];
+
+			if (bestHit[0] != null) {
+				this.serverAttach(
+						new HookAttachment.SubLevelBlock(bestUuid[0], bestHit[0].plotBlock(), bestHit[0].plotHit()),
+						true);
+				this.setDeltaMovement(0, 0, 0);
+				anySubLevelCrossed = false;
 			}
 		}
 
-		if (nearSubLevel != null) {
+		if (anySubLevelCrossed) {
 			this.manualProjectileStep();
 		} else {
 			super.tick();
@@ -318,6 +336,11 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 							return;
 						}
 						break;
+					}
+					if (!this.level().isClientSide && !sli.isPlotBlockSolid(slb.subLevelId(), slb.plotBlock())) {
+						if (this.tryMigrateLostSubLevelAnchor(sli, slb)) return;
+						this.onAttachedEntityPerished();
+						return;
 					}
 					Vec3 worldPoint = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
 					this.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
@@ -401,24 +424,13 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	protected void onHit(HitResult hit) {
 		if (this.level().isClientSide) return;
 
-		if (this.attachment != null) {
+		if (this.attachment != null ||
+			this.shootingEntity == null || this.shootingEntityID == 0 || !this.shootingEntity.isAlive() ||
+			this.tickCount < 1 ||
+			hit == null
+		) {
 			return;
 		}
-
-		if (this.shootingEntity == null || this.shootingEntityID == 0) {
-			return;
-		}
-
-		if(!this.shootingEntity.isAlive()) {
-			return;
-		}
-
-		if(this.tickCount < 1)
-			return;
-
-		if (hit == null)
-			return;
-
 
 		Vec vec3d = Vec.positionVec(this);
 		Vec vec3d1 = vec3d.add(Vec.motionVec(this));
@@ -877,6 +889,48 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				}
 			}
 		}
+	}
+
+	private boolean tryMigrateLostSubLevelAnchor(SubLevelIntegration sli, HookAttachment.SubLevelBlock slb) {
+		Vec3 lastWorldPos;
+		try {
+			lastWorldPos = slb.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
+		} catch (Throwable ignored) {
+			lastWorldPos = this.position();
+		}
+		BlockPos worldCandidate = BlockPos.containing(lastWorldPos);
+
+		UUID[] winner = { null };
+		BlockPos[] winnerPlotBlock = { null };
+		final Vec3 probePoint = lastWorldPos;
+		sli.forEachTrackedSubLevel((uuid, aabb) -> {
+			if (winner[0] != null) return;
+			if (uuid.equals(slb.subLevelId())) return;
+			if (!aabb.contains(probePoint)) return;
+			BlockPos plotBlock = sli.worldToPlotBlock(uuid, probePoint, CONTRAPTION_PARTIAL_TICKS);
+			if (sli.isPlotBlockSolid(uuid, plotBlock)) {
+				winner[0] = uuid;
+				winnerPlotBlock[0] = plotBlock;
+			}
+		});
+
+		if (winner[0] != null) {
+			Vec3 newPlotHit = sli.worldToPlot(winner[0], lastWorldPos, CONTRAPTION_PARTIAL_TICKS);
+			GrappleMod.LOGGER.info("[Grapple <-> Sable] Sub-level anchor migrated hookId={} {} → {} (plotBlock {})",
+					this.getId(), slb.subLevelId(), winner[0], winnerPlotBlock[0]);
+			this.reattachToSubLevel(winner[0], winnerPlotBlock[0], newPlotHit);
+			return true;
+		}
+
+		BlockState worldState = this.level().getBlockState(worldCandidate);
+		double dist = distancePointToAabb(this.position(), new AABB(worldCandidate));
+		if (!worldState.isAir() && dist <= DISASSEMBLY_REANCHOR_MAX_DIST) {
+			GrappleMod.LOGGER.info("[Grapple <-> Sable] Sub-level anchor lost, falling back to world block for hookId={} at {}",
+					this.getId(), worldCandidate);
+			this.reattachToBlock(worldCandidate, lastWorldPos);
+			return true;
+		}
+		return false;
 	}
 
 	public void reattachToSubLevel(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint) {

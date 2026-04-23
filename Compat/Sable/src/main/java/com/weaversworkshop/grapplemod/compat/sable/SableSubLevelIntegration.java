@@ -414,6 +414,21 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         return null;
     }
 
+    @Override
+    public boolean isPlotBlockSolid(UUID subLevelId, BlockPos plotBlock) {
+        Tracked t = tracked.get(subLevelId);
+        if (t == null || t.subLevel.isRemoved()) return false;
+        LevelPlot plot = t.subLevel.getPlot();
+        if (plot == null) return false;
+        ChunkPos chunkPos = new ChunkPos(plotBlock.getX() >> 4, plotBlock.getZ() >> 4);
+        if (!plot.contains(chunkPos)) return false;
+        LevelChunk chunk = plot.getChunk(plot.toLocal(chunkPos));
+        if (chunk == null) return false;
+        BlockState state = chunk.getBlockState(plotBlock);
+        if (state.isAir()) return false;
+        return !state.getCollisionShape(EmptyBlockGetter.INSTANCE, plotBlock).isEmpty();
+    }
+
     private static @Nullable BlockPos probeNonAir(LevelPlot plot, BlockPos probe) {
         ChunkPos globalChunkPos = new ChunkPos(probe.getX() >> 4, probe.getZ() >> 4);
         if (!plot.contains(globalChunkPos)) return null;

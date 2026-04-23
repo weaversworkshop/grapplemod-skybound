@@ -70,18 +70,18 @@ public class ServerHookEntityTracker {
 	}
 	
 	public static void handleGrappleEndFromClient(int ownerId, Level world, Set<Integer> hookEntityIds) {
-		
+
 		for (int hookEntityId : hookEntityIds) {
 	      	Entity grapple = world.getEntity(hookEntityId);
 	  		if (grapple instanceof GrapplinghookEntity) {
 	  			((GrapplinghookEntity) grapple).removeServer();
 	  		}
 		}
-  		
+
   		Entity entity = world.getEntity(ownerId);
   		if (entity != null) entity.fallDistance = 0;
 
-  		
+
   		ServerHookEntityTracker.removeAllHooksFor(ownerId);
 	}
 

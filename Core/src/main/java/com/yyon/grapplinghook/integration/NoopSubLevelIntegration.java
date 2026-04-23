@@ -50,6 +50,11 @@ public final class NoopSubLevelIntegration implements SubLevelIntegration {
     }
 
     @Override
+    public boolean isPlotBlockSolid(UUID subLevelId, BlockPos plotBlock) {
+        return false;
+    }
+
+    @Override
     public @Nullable UUID findSubLevelForPlotBlock(BlockPos plotPos) {
         return null;
     }

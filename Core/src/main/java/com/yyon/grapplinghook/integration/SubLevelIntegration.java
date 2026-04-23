@@ -31,6 +31,8 @@ public interface SubLevelIntegration {
 
     @Nullable BlockPos getCapturedPlotPos(UUID subLevelId, BlockPos worldPos);
 
+    boolean isPlotBlockSolid(UUID subLevelId, BlockPos plotBlock);
+
     @Nullable UUID findSubLevelForPlotBlock(BlockPos plotPos);
 
     boolean anyTrackedSubLevelOverlaps(AABB probe);
