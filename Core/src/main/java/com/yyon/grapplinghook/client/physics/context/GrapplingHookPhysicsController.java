@@ -294,23 +294,10 @@ public class GrapplingHookPhysicsController {
 
 		for (GrapplinghookEntity hookEntity : this.grapplehookEntities) {
 			Vec hookPos = Vec.positionVec(hookEntity);
-			// Rope hook-end: nudge outward from the attach face on block-backed hooks
-			// so the starting raycast doesn't originate inside a solid VoxelShape.
-			// Pendulum math below keeps using the raw hookPos so physics anchors stay
-			// at the hook entity's real position.
 			Vec ropeHookPos = hookEntity.getRopeAnchorHookPos();
-			// Rope segmenting uses the hand position so wrap detection aligns with the
-			// visible rope. Physics math below continues to use playerPos (eye) since
-			// the pendulum center is the player's body-ish anchor; the small offset
-			// between hand and eye is tolerated by the taut-rope buffer.
 			Vec ropeEndpoint = hookEntity.getRopeOriginAtHolder();
 			RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
 
-			// Update segment handler (handles rope bends). Phase 3: rope wrap
-			// now goes through MultiSpaceRaycaster, which routes SUBLEVEL spans
-			// to the Sable integration's plot-space voxel walker — BlockGetter.clip
-			// is never called for sublevel-crossing rays, so the render-thread hang
-			// that motivated this fallback is gone.
 			boolean skipRopeWrap = this.custom.get(BLOCK_PHASE_ROPE.get());
 			if (skipRopeWrap) {
 				segmentHandler.updatePos(ropeHookPos, ropeEndpoint, hookEntity.ropeLength);
@@ -341,10 +328,6 @@ public class GrapplingHookPhysicsController {
 			if (oldspherevec.length() >= remainingLength) {
 				if (oldspherevec.length() - remainingLength > GrappleModCommonConfig.get().getRopeSnapBuffer()) {
 					// if rope is too long, the rope snaps
-					GrappleMod.LOGGER.info("[HookDbg] SNAP! hookId={} ropeLength={} distToAnchor={} remaining={} oldSphere={} diff={} buffer={} bends={} anchor={}",
-							hookEntity.getId(), hookEntity.ropeLength, distToAnchor, remainingLength, oldspherevec.length(),
-							oldspherevec.length() - remainingLength, GrappleModCommonConfig.get().getRopeSnapBuffer(),
-							segmentHandler.getBends().size(), anchor);
 					this.disable();
 					this.updateServerPos();
 					return;
@@ -915,11 +898,7 @@ public class GrapplingHookPhysicsController {
 
 	public void addHookEntity(GrapplinghookEntity hookEntity) {
 		this.grapplehookEntities.add(hookEntity);
-		double newLen = hookEntity.getSegmentHandler().getDist(Vec.positionVec(hookEntity), Vec.positionVec(holder).add(new Vec(0, holder.getEyeHeight(), 0)));
-		GrappleMod.LOGGER.info("[HookDbg] addHookEntity hookId={} ropeLength={} bends={} hookPos={} holderEye={}",
-				hookEntity.getId(), newLen, hookEntity.getSegmentHandler().getBends().size(),
-				Vec.positionVec(hookEntity), Vec.positionVec(holder).add(new Vec(0, holder.getEyeHeight(), 0)));
-		hookEntity.ropeLength = newLen;
+		hookEntity.ropeLength = hookEntity.getSegmentHandler().getDist(Vec.positionVec(hookEntity), Vec.positionVec(holder).add(new Vec(0, holder.getEyeHeight(), 0)));
 		this.grapplehookEntityIds.add(hookEntity.getId());
 	}
 

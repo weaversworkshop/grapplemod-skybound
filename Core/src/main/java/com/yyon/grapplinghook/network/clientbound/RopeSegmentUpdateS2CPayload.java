@@ -30,20 +30,12 @@ import org.jetbrains.annotations.NotNull;
     along with GrappleMod.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Previously SegmentMessage
-//
-// For {@code shouldAdd=false} (remove), {@code space} is ignored — encode as
-// {@link AnchorSpace.World} sentinel. Callers constructing a remove payload
-// should pass {@link AnchorSpace.World#INSTANCE}.
 public record RopeSegmentUpdateS2CPayload(int hookId, boolean shouldAdd, int index, Vec pos,
 										  NullableDirection topFacing, NullableDirection bottomFacing,
 										  AnchorSpace space) implements S2CPayload {
 	public static final ResourceLocation IDENTIFIER = GrappleMod.id("rope_segment_update");
 	public static final CustomPacketPayload.Type<RopeSegmentUpdateS2CPayload> PAYLOAD_TYPE = new Type<>(IDENTIFIER);
 
-	// Manual codec — StreamCodec.composite maxes out at 6 field/getter pairs; this
-	// payload carries 7 fields (hookId, shouldAdd, index, pos, topFacing, bottomFacing,
-	// space). Keep in lock-step with the record's field order.
 	public static final StreamCodec<RegistryFriendlyByteBuf, RopeSegmentUpdateS2CPayload> STREAM_CODEC = new StreamCodec<>() {
 		@Override
 		public RopeSegmentUpdateS2CPayload decode(RegistryFriendlyByteBuf buf) {

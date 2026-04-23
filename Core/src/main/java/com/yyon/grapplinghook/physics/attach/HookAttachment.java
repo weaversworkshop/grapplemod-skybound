@@ -11,62 +11,20 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.ref.WeakReference;
 import java.util.UUID;
 
-/**
- * Closed-world description of what a {@code GrapplinghookEntity} is anchored to.
- * A {@code null} {@code HookAttachment} means the hook is in flight or detached;
- * otherwise the concrete variant tells every consumer (tick follow, save, render,
- * network) exactly which path applies — replacing the previous scatter of eight
- * nullable fields on the entity.
- *
- * <p>Wire-format alignment: {@link Block}, {@link Entity}, and {@link ContraptionBlock}
- * map 1:1 onto {@link GrappleAttachS2CPayload.GrappleAttachTarget#Block Block} /
- * {@code Entity} / {@code EntityOffset}. {@link SubLevelBlock} is a server-side
- * variant for the future Sable compat module — on the wire it collapses to an
- * {@code EntityOffset}-like payload; clients see a sub-level the same way they
- * see a Create contraption.
- */
 public sealed interface HookAttachment
         permits HookAttachment.Block,
                 HookAttachment.Entity,
                 HookAttachment.ContraptionBlock,
                 HookAttachment.SubLevelBlock {
 
-    /**
-     * World-space point the rope anchors to at the given partial-tick interpolation.
-     * Time-invariant for {@link Block}; follows the underlying object for the others.
-     */
     Vec3 worldHitPoint(float partialTicks);
 
-    /**
-     * Re-resolves any cached entity handle against {@code level}. No-op for block variants.
-     * Returns a fresh attachment instance if the handle was refreshed, or {@code this} otherwise.
-     */
     default HookAttachment refreshed(Level level) { return this; }
 
-    /**
-     * Lower this attachment to its wire representation. Used by the server when sending
-     * a full {@link GrappleAttachS2CPayload}. {@link SubLevelBlock} throws until the
-     * Sable compat module provides a transport.
-     */
     GrappleAttachS2CPayload.GrappleAttachTarget toWireTarget();
 
-    /**
-     * Outward face direction at the hook's anchor point, if the attachment sits on
-     * a block face — used to nudge the rope's hook-end endpoint outward so the
-     * first rope raycast doesn't start inside a solid block. Returns {@code null}
-     * for attachments that have no block face (plain {@link Entity}, or a
-     * {@link ContraptionBlock} that was attached mid-flight without a known
-     * local block cell).
-     */
     default @Nullable Direction ropeAnchorFace() { return null; }
 
-    /**
-     * Face-inference helper: given a block position and a hit point in the block's
-     * local coordinate system (the hit point's floored coords equal {@code block}),
-     * return the face the hit is on. Picks whichever of the six block faces the
-     * hit is closest to — correct for points on or near the surface, degenerate
-     * to {@link Direction#UP} for mid-block hits.
-     */
     static Direction inferFace(BlockPos block, Vec3 hitPoint) {
         double dx = hitPoint.x - block.getX();
         double dy = hitPoint.y - block.getY();
@@ -82,11 +40,6 @@ public sealed interface HookAttachment
         return best;
     }
 
-    // ------------------------------------------------------------------
-    // Variants
-    // ------------------------------------------------------------------
-
-    /** Static world-space block anchor — the classic grapple target. */
     record Block(BlockPos pos, Vec3 subHitPoint, @Nullable Direction sideHit)
             implements HookAttachment {
         @Override public Vec3 worldHitPoint(float partialTicks) { return subHitPoint; }
@@ -99,10 +52,6 @@ public sealed interface HookAttachment
         }
     }
 
-    /**
-     * Plain-entity anchor (mobs, boats, minecarts). Follows the entity's centre.
-     * The weak ref avoids retaining a dead entity; {@link #refreshed(Level)} re-looks-up by ID.
-     */
     record Entity(int entityId, WeakReference<net.minecraft.world.entity.Entity> resolved)
             implements HookAttachment {
 
@@ -135,12 +84,6 @@ public sealed interface HookAttachment
         }
     }
 
-    /**
-     * Create contraption anchor — follows a contraption-local offset via the active
-     * {@code ContraptionIntegration}. {@code localBlockPos} is nullable because
-     * mid-flight contraption attaches don't know which local cell was captured;
-     * when non-null it enables precise block re-anchoring on disassembly.
-     */
     record ContraptionBlock(int entityId,
                             WeakReference<net.minecraft.world.entity.Entity> resolved,
                             Vec3 localOffset,
@@ -184,14 +127,6 @@ public sealed interface HookAttachment
         }
     }
 
-    /**
-     * Sable sub-level anchor (Create: Aeronautics ships, etc.). Sub-levels are keyed
-     * by UUID (persistent across save/load, unlike entity IDs); blocks live in a
-     * far-away plot region that the Sable compat module projects to apparent
-     * world-space each tick via {@link SubLevelIntegration#plotToWorld}. When no
-     * Sable compat is installed, {@link SubLevelIntegration} is a no-op and the
-     * Sable attach paths never fire, so this variant never appears at runtime.
-     */
     record SubLevelBlock(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint)
             implements HookAttachment {
         @Override public Vec3 worldHitPoint(float partialTicks) {
@@ -204,22 +139,10 @@ public sealed interface HookAttachment
         }
 
         @Override public @Nullable Direction ropeAnchorFace() {
-            // Face inferred in plot-space coords; for translation-only poses (the
-            // common Aeronautics case) this is identical to world-space. Rotated
-            // sub-levels are covered by project_v2_rope_rotation_limitation.md.
             return inferFace(plotBlock, plotHitPoint);
         }
     }
 
-    // ------------------------------------------------------------------
-    // Wire reconstruction
-    // ------------------------------------------------------------------
-
-    /**
-     * Reconstruct an attachment from a received wire target. The top-level {@code hookWorldPos}
-     * from the containing {@link GrappleAttachS2CPayload} is used as {@code subHitPoint} for
-     * {@link Block} variants, since the wire {@code Block} target carries only the block pos.
-     */
     static HookAttachment fromWireTarget(
             GrappleAttachS2CPayload.GrappleAttachTarget target,
             Vec3 hookWorldPos,

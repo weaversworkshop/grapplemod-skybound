@@ -32,15 +32,6 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 
 
-/**
- * Client-side S2C receiver registration and handler bodies.
- *
- * <p>All code that touches {@link Minecraft}, {@link ClientPlayNetworking},
- * or {@link Level} in a client-only sense lives here. The payload classes
- * themselves stay free of client-only references so Fabric's dedicated-server
- * classloader can verify them without needing {@code ClientLevel} or
- * {@code ClientPlayNetworking$PlayPayloadHandler}.</p>
- */
 @Environment(EnvType.CLIENT)
 public final class ClientNetworkReceivers {
 
@@ -98,8 +89,6 @@ public final class ClientNetworkReceivers {
             }
 
             if (e instanceof GrapplinghookEntity grapple) {
-                // Skip if the hook is already following a moving anchor — its position is
-                // driven by the attached entity, overwriting it here would cause a jitter.
                 if (grapple.attachedWorldEntity() != null) {
                     return;
                 }
@@ -118,11 +107,6 @@ public final class ClientNetworkReceivers {
         if (grapple instanceof GrapplinghookEntity hookEntity) {
             RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
             if (payload.shouldAdd()) {
-                // Wire carries only the server-resolved worldPos. For non-WORLD
-                // bends we must reconstruct nativePos via the owning integration's
-                // inverse transform — otherwise refreshWorldCoords on the next
-                // tick feeds world coords into plotToWorld/localToWorld and
-                // produces huge garbage coordinates that trip the client rope-snap.
                 com.yyon.grapplinghook.util.Vec worldPos = payload.pos();
                 com.yyon.grapplinghook.util.Vec nativePos = worldPos;
                 if (payload.space() instanceof com.yyon.grapplinghook.physics.AnchorSpace.SubLevel sl) {
@@ -219,12 +203,7 @@ public final class ClientNetworkReceivers {
 
             segmentHandler.forceSetPos(new Vec(payload.hookPos()), Vec.positionVec(holder));
 
-            // Reattach path: if this holder already has a physics controller that owns this
-            // exact hook entity, don't go through createControl — it calls disable() on the
-            // existing controller, which fires HaltCustomPhysicsC2SPayload, which calls
-            // removeServer() and discards the hook entity. For server-initiated reanchors
-            // (e.g. Sable sub-level migration via reattachToSubLevel), we only want to swap
-            // the attachment + rope snapshot. The controller itself stays intact.
+            // Reattach via server-initiated reanchor must skip createControl; disable() would halt the hook.
             GrapplingHookPhysicsController existing = GrappleModClient.get()
                     .getClientControllerManager()
                     .getController(payload.holderId());
@@ -238,11 +217,6 @@ public final class ClientNetworkReceivers {
         });
     }
 
-    /**
-     * Resolve a {@link GrapplinghookEntity} by its entity ID on the client, logging a warning
-     * and returning {@code null} if missing or mistyped. Centralizes the repeated
-     * "getEntity / instanceof / warn" pattern across the three attachment receivers.
-     */
     private static @org.jetbrains.annotations.Nullable GrapplinghookEntity resolveHookOrWarn(int hookId, Level world, String ctx) {
         Entity e = world.getEntity(hookId);
         if (e instanceof GrapplinghookEntity grapple) return grapple;

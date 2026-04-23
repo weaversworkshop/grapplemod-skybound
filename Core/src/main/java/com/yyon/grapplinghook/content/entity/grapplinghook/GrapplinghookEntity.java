@@ -81,11 +81,6 @@ import static com.yyon.grapplinghook.content.registry.CustomizationProperties.*;
 
 public class GrapplinghookEntity extends ThrowableItemProjectile implements IExtendedSpawnPacketEntity {
 
-	/**
-	 * Partial-ticks value fed to {@link ContraptionIntegration} transforms. Using end-of-tick
-	 * (1.0f) for now and relying on render interpolation for sub-tick smoothing. Exposed as
-	 * a constant so we can try other values without code hunting.
-	 */
 	private static final float CONTRAPTION_PARTIAL_TICKS = 1.0f;
 
 	public Entity shootingEntity = null;
@@ -95,12 +90,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	private boolean isAttachedToMainHand = true;
 	private boolean isFirstAttach = false;
-	/**
-	 * Spectator-visible "this hook is frozen" flag. Replicated in the spawn packet so new
-	 * observers render the hook as stationary without receiving the full attachment target
-	 * (which is owner-only). Kept in sync with {@code attachment != null} by
-	 * {@link #setAttachment}.
-	 */
 	private boolean isAttachedToSurface;
 	public Vec attachDirection = null;
 
@@ -116,19 +105,13 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	private HookCustomization customization;
 
-	// magnet attract
 	public Vec prevPos = null;
 	public boolean foundBlock = false;
 	public boolean wasInAir = false;
 	public BlockPos magnetBlock = null;
 
-	/**
-	 * Authoritative attachment state — what the hook is anchored to, as a sealed sum type.
-	 * {@code null} means the hook is in flight or detached.
-	 */
 	@Nullable private HookAttachment attachment = null;
 
-	/** Client-side? instantiation. Creates a very basic entity for filling in details later.**/
 	public GrapplinghookEntity(EntityType<? extends GrapplinghookEntity> type, Level world) {
 		super(type, world);
 
@@ -140,7 +123,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	}
 
-	/** Server-side? instantiation. Used to spawn the entity & configure it correctly. */
 	public GrapplinghookEntity(Level world, LivingEntity shooter, boolean isAttachedToMainHand, HookCustomization customization, boolean isInDoublePair) {
 		super(ModEntities.GRAPPLE_HOOK.get(), shooter.position().x, shooter.position().y + shooter.getEyeHeight(), shooter.position().z, world);
 
@@ -149,7 +131,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 		this.isInDoublePair = isInDoublePair;
 		
-		this.isAttachedToMainHand = isAttachedToMainHand;   // set early so getRopeOriginAtHolder sees the right hand side
+		this.isAttachedToMainHand = isAttachedToMainHand;
 		Vec pos = this.getRopeOriginAtHolder();
 
 		this.segmentHandler = new RopeSegmentHandler(this, new Vec(pos), new Vec(pos));
@@ -207,9 +189,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	@Override
 	public void lerpTo(double x, double y, double z, float yRot, float xRot, int lerpSteps) {
-		// While tethered to a moving body (mob, contraption, or sub-level), the client tracks
-		// the anchor locally in tick(). Ignoring server position sync here prevents ~5Hz
-		// jitter from tracker updates fighting our direct setPos.
 		if (this.isAttachedToMovingBody()) return;
 		super.lerpTo(x, y, z, yRot, xRot, lerpSteps);
 	}
@@ -239,23 +218,14 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	@Override
 	public void tick() {
-		if (this.shootingEntityID == 0 || this.shootingEntity == null) { // removes ghost grappling hooks
-			GrappleMod.LOGGER.info("[HookDbg] tick: discarding ghost (no shooter) hookId={} side={}", this.getId(), this.level().isClientSide ? "C" : "S");
+		if (this.shootingEntityID == 0 || this.shootingEntity == null) {
 			this.discard();
 			return;
 		}
 
 		if (!this.shootingEntity.isAlive()) {
-			GrappleMod.LOGGER.info("[HookDbg] tick: discarding — shooter not alive hookId={} side={}", this.getId(), this.level().isClientSide ? "C" : "S");
 			this.discard();
 			return;
-		}
-
-		if (!this.level().isClientSide) {
-			GrappleMod.LOGGER.info("[HookDbg] tick#{} hookId={} pos={} delta={} attachment={} bends={}",
-					this.tickCount, this.getId(), this.position(), this.getDeltaMovement(),
-					this.attachment == null ? "null" : this.attachment.getClass().getSimpleName(),
-					this.segmentHandler == null ? "n/a" : this.segmentHandler.getBends().size());
 		}
 
 		if (this.isFirstAttach) {
@@ -264,7 +234,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			super.setPos(this.thisPos.x, this.thisPos.y, this.thisPos.z);
 		}
 
-		// Re-resolve any cached entity handle on the current attachment.
 		if (this.attachment != null) {
 			HookAttachment refreshed = this.attachment.refreshed(this.level());
 			if (refreshed != this.attachment) {
@@ -276,10 +245,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			this.setDeltaMovement(0, 0, 0);
 		}
 
-		// Contraption entities typically return isPickable()==false, so vanilla
-		// projectile raycasts filter them out entirely. We do our own AABB scan
-		// against the ray segment for this tick and synthesize an EntityHitResult
-		// so the normal onHit flow handles the attach.
 		if (this.attachment == null && !this.level().isClientSide) {
 			Vec3 rayStart = this.position();
 			Vec3 rayEnd = rayStart.add(this.getDeltaMovement());
@@ -291,28 +256,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			}
 		}
 
-		// Sub-level broad-phase scan + near-sublevel guard, combined.
-		//
-		// Sable's ProjectileUtilMixin patches vanilla projectile collision to look
-		// for hits inside sub-levels' plot-space block storage. Any time the hook's
-		// per-tick move ray passes through a tracked sub-level's apparent-world AABB,
-		// that patched path runs — and when it runs, it can pull plot-coord
-		// BlockGetter state, triggering chunk generation at ~20M coords and hanging
-		// the server for several seconds. Same underlying bug documented in
-		// project_sable_rope_raytrace_hang.md / project_sable_projectile_flight_hang.md.
-		//
-		// The geometric trigger is **ray vs sub-level AABB**, not hook-bbox vs AABB —
-		// so we use {@link SubLevelIntegration#findSubLevelAlongRay} (same ray test
-		// Sable effectively uses) as the gate, not a swept-bbox overlap. The hook's
-		// hitbox is only ~0.25 m, so a swept-bbox check can miss cases where the
-		// ray actually crosses the AABB.
-		//
-		// If the ray hits a sub-level AABB:
-		//   (a) server-side: try our own plot-aware block raycast. Hit → attach.
-		//       Miss (near-miss through an air gap) → let manualProjectileStep
-		//       advance the hook, never running super.tick().
-		//   (b) client-side: just bypass super.tick() too; client hook physics
-		//       re-syncs to the server via the existing tracking packets.
+		// Sable's ProjectileUtilMixin patches vanilla projectile collision; if its ray crosses a tracked sub-level AABB it can hang the server.
 		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
 		UUID nearSubLevel = null;
 		if (this.attachment == null) {
@@ -321,16 +265,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			nearSubLevel = sli.findSubLevelAlongRay(rayStart, rayEnd);
 
 			if (nearSubLevel != null && !this.level().isClientSide) {
-				// Use the detailed raycast so we get the hit block directly from
-				// the plot-space DDA. The non-detailed path derives plotBlock via
-				// BlockPos.containing(worldToPlot(entryPoint)), which for hits on
-				// +X/+Y/+Z faces rounds to the adjacent block on the wrong side of
-				// the face (entry point sits exactly on the integer boundary). A
-				// wrong plotBlock propagates to HookAttachment.ropeAnchorFace's
-				// inferFace, flipping the anchor offset inward — causing the rope
-				// endpoint to sit inside a solid plot block and corrupting every
-				// subsequent rope raycast. Most visible when the player is inside
-				// the sub-level AABB (close to the hit block).
 				SubLevelIntegration.SubLevelRaycastHit detailedHit = sli.raycastSubLevelDetailed(
 						nearSubLevel, rayStart, rayEnd, CONTRAPTION_PARTIAL_TICKS);
 				if (detailedHit != null) {
@@ -338,7 +272,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 							new HookAttachment.SubLevelBlock(nearSubLevel, detailedHit.plotBlock(), detailedHit.plotHit()),
 							true);
 					this.setDeltaMovement(0, 0, 0);
-					nearSubLevel = null; // attached — no bypass needed
+					nearSubLevel = null;
 				}
 			}
 		}
@@ -349,11 +283,10 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			super.tick();
 		}
 
-		// Dispatch follow behavior on the attachment variant.
 		switch (this.attachment) {
-			case null -> { /* unattached: no follow */ }
+			case null -> {}
 
-			case HookAttachment.Block ignored -> { /* static block: no follow */ }
+			case HookAttachment.Block ignored -> {}
 
 			case HookAttachment.Entity entityAttach -> {
 				Entity e = entityAttach.entity();
@@ -380,12 +313,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			case HookAttachment.SubLevelBlock slb -> {
 				try {
 					if (!sli.isSubLevelLoaded(slb.subLevelId())) {
-						// Server is authoritative for detach. On the client, the sub-level
-						// may just not have propagated through Sable's network layer yet
-						// (seen right after a block→sub-level migration — Sable itself
-						// logs "Received a sub-level movement packet for a non-existent
-						// sub-level" at the same moment). Detaching the client hook in
-						// that window orphans it while the server keeps following.
 						if (!this.level().isClientSide) {
 							this.onAttachedEntityPerished();
 							return;
@@ -417,24 +344,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		return this.attachment != null;
 	}
 
-	/**
-	 * Minimal in-flight projectile step used when the hook is near a Sable sub-level's
-	 * apparent AABB — replaces {@code super.tick()} so we don't call
-	 * {@link ProjectileUtil#getHitResultOnMoveVector}, which Sable patches to transform
-	 * the ray through plot space. That patched path can walk millions of voxels when a
-	 * large sublevel is nearby, hanging the server for 10+ seconds on a near-miss shot.
-	 *
-	 * <p>Block-hit detection is already handled by the sub-level broad-phase scan
-	 * above (bounded voxel traversal in plot space) plus, outside sub-levels, the
-	 * vanilla static-world blocks won't matter on a near-miss because by definition
-	 * the hook is over air. Entity hits still need to be detected — we use
-	 * {@link ProjectileUtil#getEntityHitResult}, which Sable does NOT patch.</p>
-	 *
-	 * <p>This intentionally skips things like fire burning, water bubble particles,
-	 * and the despawn timer that {@code Projectile.tick} handles. Those are nice-to-have
-	 * cosmetic ticks, not load-bearing for grapple mechanics during the ~20 ticks a
-	 * hook typically spends flying past a sub-level AABB.</p>
-	 */
 	private void manualProjectileStep() {
 		Vec3 delta = this.getDeltaMovement();
 		Vec3 start = this.position();
@@ -445,16 +354,8 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				this.getBoundingBox().expandTowards(delta).inflate(1.0),
 				e -> !e.isSpectator() && e.isAlive() && e.isPickable());
 
-		// World-block collision. Critical when the player is *inside* a sub-level's
-		// apparent AABB (e.g., standing on a Sable ship) — every tick the outer
-		// tick() routes us here (findSubLevelAlongRay returns non-null because
-		// rayStart is inside the AABB), and without this the hook silently phases
-		// through world walls/floors while near the ship. We use our DDA
-		// (GrappleModUtils.rayTraceBlocks) which bypasses Sable's BlockGetter.clip
-		// mixin, so we can safely check world blocks even inside a tracked AABB.
 		BlockHitResult blockHit = GrappleModUtils.rayTraceBlocks(this, this.level(), new Vec(start), new Vec(end));
 
-		// Pick the closer of the two (if both present), apply via onHit.
 		HitResult hit = null;
 		if (entityHit != null && blockHit != null) {
 			double entityDistSq = entityHit.getLocation().distanceToSqr(start);
@@ -469,7 +370,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		if (hit != null) {
 			this.onHit(hit);
 			if (this.isRemoved()) return;
-			if (this.attachment != null) return; // onHit may have attached — stop here
+			if (this.attachment != null) return;
 		}
 
 		this.setPos(end.x, end.y, end.z);
@@ -479,7 +380,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.setDeltaMovement(delta.x * drag, (delta.y - gravity) * drag, delta.z * drag);
 	}
 
-	/** Extracted from tick() — handle the "attached entity is gone" branch. */
 	private void onAttachedEntityPerished() {
 		GrappleMod.LOGGER.warn("Attached entity has perished ...");
 		if (!this.level().isClientSide && this.shootingEntityID != 0) {
@@ -494,18 +394,12 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	@Override
 	public boolean canUsePortal(boolean allowPassengers) {
-		return false; // block portal travel else dear god.
+		return false;
 	}
 
 	@Override
 	protected void onHit(HitResult hit) {
 		if (this.level().isClientSide) return;
-
-		GrappleMod.LOGGER.info("[HookDbg] onHit entered hookId={} hitType={} loc={} attachment={}",
-				this.getId(),
-				hit == null ? "null" : hit.getType(),
-				hit == null ? "null" : hit.getLocation(),
-				this.attachment == null ? "null" : this.attachment.getClass().getSimpleName());
 
 		if (this.attachment != null) {
 			return;
@@ -519,8 +413,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			return;
 		}
 
-		// A sanity check - Gives the client side entity a bit more
-		// time to spawn.
 		if(this.tickCount < 1)
 			return;
 
@@ -558,15 +450,11 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				return;
 			}
 
-			// Respect config toggle
 			if (!GrappleModCommonConfig.get().doHooksAffectEntities()) {
 				this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), Vec.positionVec(this), Vec.positionVec(this).add(Vec.motionVec(this))));
 				return;
 			}
 
-			// Contraption path — per-block raycast + local-offset attach.
-			// On a miss (ray passed through empty cell inside the contraption's AABB),
-			// re-trace for blocks past the contraption so the hook keeps flying.
 			ContraptionIntegration contraptionIntegration = GrappleModIntegrations.getContraptionIntegration();
 			if (contraptionIntegration.isContraption(entity)) {
 				Vec3 rayStart = new Vec3(vec3d.x, vec3d.y, vec3d.z);
@@ -591,12 +479,10 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 					return;
 				}
 
-				// Miss inside the AABB — re-trace past the contraption for blocks.
 				this.onHit(GrappleModUtils.rayTraceBlocks(this, this.level(), vec3d, vec3d1));
 				return;
 			}
 
-			// Plain-entity attach path (mobs, etc.) — follow entity center.
 			this.serverAttach(new HookAttachment.Entity(entity), true);
 
 			GrappleMod.LOGGER.debug("Attached to a new entity: {}", entity.getId());
@@ -605,11 +491,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			BlockPos blockpos = blockhit.getBlockPos();
 			Vec3 hitPoint = hit.getLocation();
 
-			// Sable's ProjectileUtilMixin patches the vanilla projectile raycast so it
-			// hits blocks in the far-away plot region. When that fires, the BlockHitResult
-			// carries plot-coord BlockPos / hitPoint (X or Z > 10M), NOT main-world coords.
-			// Detect that here and route it through SubLevelBlock so the rope anchors
-			// correctly via the sub-level's pose transform each tick.
 			boolean looksLikePlotCoord = Math.abs(blockpos.getX()) > 10_000_000
 					|| Math.abs(blockpos.getZ()) > 10_000_000;
 			if (looksLikePlotCoord) {
@@ -638,14 +519,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	private void handleHookPhysics() {
 		if (this.segmentHandler.hookPastBend(this.ropeLength) && !this.level().isClientSide) {
-			GrappleMod.LOGGER.info("[HookDbg] hookPastBend fired hookId={} distToFarthest={} ropeLen={}",
-					this.getId(), this.segmentHandler.getDistToFarthest(), this.ropeLength);
-			// Rope has exhausted its length past the first bend — collapse the hook
-			// onto that bend as a new anchor. The attachment type has to match the
-			// bend's host so the new anchor tracks correctly: a WORLD bend becomes
-			// a static Block attach (v1 behavior), a CONTRAPTION bend becomes a
-			// ContraptionBlock attach that rides the contraption, a SUBLEVEL bend
-			// becomes a SubLevelBlock attach that rides the sub-level pose.
 			RopeBend farthestBend = this.segmentHandler.getBends().get(1);
 			Vec farthest = farthestBend.worldPos;
 			HookAttachment newAnchor = switch (farthestBend.space) {
@@ -660,11 +533,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				case AnchorSpace.SubLevel sl -> {
 					SubLevelIntegration sliForAnchor = GrappleModIntegrations.getSubLevelIntegration();
 					if (!sliForAnchor.isSubLevelLoaded(sl.subLevelId())) yield null;
-					// Approximate the hit plot-block by nudging the bend's native
-					// position back along its stored face normal (undo the face
-					// offset that insertSubLevelBend applied). Good enough for the
-					// re-anchor: the rope's hook endpoint is re-offset outward by
-					// ropeAnchorFace on the new attachment.
 					Vec3 plotPos = farthestBend.nativePos.toVec3d();
 					if (farthestBend.bottomSide != null) {
 						Direction f = farthestBend.bottomSide;
@@ -679,20 +547,9 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			}
 		}
 
-		// Hook-side rope endpoint: offset outward from the attach face when the hook
-		// is stuck in a block so the first rope raycast doesn't start inside the
-		// VoxelShape. See getRopeAnchorHookPos for the rationale.
 		Vec hookPos = this.getRopeAnchorHookPos();
-		// Use the holder's hand position (not eye) as the rope's player-endpoint so
-		// wrap/unwrap math operates on the same line the renderer draws. Keeps
-		// rope bends aligned with the visible rope even when the player's eye and
-		// hand diverge (e.g. near walls, looking up/down, different body yaw).
 		Vec playerPos = this.getRopeOriginAtHolder();
 
-		// Phase 3: rope wrap now goes through MultiSpaceRaycaster, which routes
-		// SUBLEVEL spans to the Sable integration's plot-space voxel walker
-		// (bypassing the BlockGetter.clip hang entirely). The only remaining
-		// reason to skip wrap is the player's explicit BLOCK_PHASE_ROPE toggle.
 		boolean skipRopeWrap = this.customization.get(BLOCK_PHASE_ROPE.get());
 
 		if (!skipRopeWrap) {
@@ -738,14 +595,8 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 			ropevec.mutableSetMagnitude(this.ropeLength - distToFarthest);
 			Vec newpos = ropevec.add(farthest);
 
-			if (!this.level().isClientSide) {
-				GrappleMod.LOGGER.info("[HookDbg] rope-yank hookId={} d={} distToFarthest={} ropeLen={} farthest={} oldPos={} newPos={}",
-						this.getId(), d, distToFarthest, this.ropeLength, farthest, this.position(), newpos);
-			}
 			this.setPos(newpos.x, newpos.y, newpos.z);
 		}
-
-		// magnet attraction
 
 		boolean shouldAttactMagnet = this.customization.get(MAGNET_ATTACHED.get()) &&
 				Vec.positionVec(this).sub(Vec.positionVec(this.shootingEntity)).length() >
@@ -822,15 +673,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 
 	public void removeServer() {
-		// Any detach path funnels through here — clearing attachment keeps reads consistent
-		// for the brief window between remove() and GC, and mirrors the attach-funnel via
-		// setAttachment(...) that every attach path now uses.
-		StackTraceElement caller = Thread.currentThread().getStackTrace()[2];
-		GrappleMod.LOGGER.info("[HookDbg] removeServer hookId={} pos={} attachment={} caller={}.{}:{}",
-				this.getId(), this.position(),
-				this.attachment == null ? "null" : this.attachment.getClass().getSimpleName(),
-				caller.getClassName().substring(caller.getClassName().lastIndexOf('.') + 1),
-				caller.getMethodName(), caller.getLineNumber());
 		this.setAttachment(null);
 		this.remove(RemovalReason.DISCARDED);
 		this.shootingEntityID = 0;
@@ -853,50 +695,25 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	}
 
 
-	/**
-	 * Commit a server-side attachment. Updates the consolidated {@link HookAttachment} state,
-	 * snaps the hook entity to the anchor, freezes velocity, and notifies the client.
-	 *
-	 * @param target the attachment to commit; block variants trigger the canAttach sanity
-	 *               check unless {@code force} is true
-	 * @param force  bypass the {@link #canAttachToBlock} check for Block targets
-	 */
 	public void serverAttach(HookAttachment target, boolean force) {
 		if (this.level().isClientSide) return;
-		GrappleMod.LOGGER.info("[HookDbg] serverAttach request hookId={} target={} force={} currentAttachment={}",
-				this.getId(),
-				target.getClass().getSimpleName(),
-				force,
-				this.attachment == null ? "null" : this.attachment.getClass().getSimpleName());
-		if (this.attachment != null) {
-			GrappleMod.LOGGER.info("[HookDbg]   -> rejected: already attached");
-			return;
-		}
-		if (this.shootingEntity == null || this.shootingEntityID == 0) {
-			GrappleMod.LOGGER.info("[HookDbg]   -> rejected: no shooter");
-			return;
-		}
+		if (this.attachment != null) return;
+		if (this.shootingEntity == null || this.shootingEntityID == 0) return;
 
-		// Block-state sanity check only applies when the target is a static block.
 		if (target instanceof HookAttachment.Block block && !force) {
 			BlockState blockState = this.level().getBlockState(block.pos());
 			if (!this.canAttachToBlock(blockState)) {
-				GrappleMod.LOGGER.info("[HookDbg]   -> canAttachToBlock REJECTED at {} state={} — removeServer",
-						block.pos(), blockState);
 				this.playSound(SoundEvents.ANVIL_LAND, 0.7f, 1.8f);
 				this.removeServer();
 				return;
 			}
 		}
-		GrappleMod.LOGGER.info("[HookDbg]   -> attaching hookId={} target={}", this.getId(), target);
 
 		this.setAttachment(target);
 
-		// Snap hook position to the anchor's current world point.
 		Vec3 anchor = target.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
 		this.setPosRaw(anchor.x, anchor.y, anchor.z);
 
-		// Small face-nudge so the hook isn't flush with the block face it attached to.
 		Vec curpos = Vec.positionVec(this);
 		if (target instanceof HookAttachment.Block block && block.sideHit() != null) {
 			switch (block.sideHit()) {
@@ -931,36 +748,18 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		GrappleModServerEvents.HOOK_ATTACH.invoker().onHookAttach(this.shootingEntity, this);
 	}
 
-	/**
-	 * Switch this hook's anchor from a static block to a moving contraption that just absorbed
-	 * that block. Preserves the original sub-block hit point as a contraption-local offset so
-	 * the rope's visual anchor doesn't snap to the block's center on conversion.
-	 *
-	 * <p>Server-only. Sends a {@link GrappleReanchorToEntityS2CPayload} (not a full
-	 * {@link GrappleAttachS2CPayload}) so the client's existing physics controller is
-	 * left intact — a full re-attach would disable the old controller, which would fire
-	 * {@code HaltCustomPhysicsC2SPayload} back and destroy the hook we just reanchored.</p>
-	 */
 	public void reattachToContraption(Entity contraption, Vec3 localOffset, @Nullable BlockPos localBlockPos) {
 		if (this.level().isClientSide) return;
 		if (this.attachment == null) return;
 
 		this.setAttachment(new HookAttachment.ContraptionBlock(contraption, localOffset, localBlockPos));
 
-		// Intentionally a lightweight reanchor packet rather than a full GrappleAttachS2CPayload:
-		// the full payload rebuilds the client-side physics controller, whose disable() path
-		// fires HaltCustomPhysicsC2SPayload back to the server and kills this hook.
 		GrappleReanchorToEntityS2CPayload packet = new GrappleReanchorToEntityS2CPayload(
 				this.getId(), contraption.getId(), localOffset);
 
 		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
 	}
 
-	/**
-	 * Called by contraption-integration compat modules when a contraption has just assembled.
-	 * Migrates any active hook anchored to a block that the contraption captured onto the
-	 * contraption itself, preserving sub-block hit precision.
-	 */
 	public static void onContraptionAssembled(Entity contraptionEntity) {
 		ContraptionIntegration ci = GrappleModIntegrations.getContraptionIntegration();
 		if (ci == null || !ci.isContraption(contraptionEntity)) return;
@@ -982,20 +781,8 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		}
 	}
 
-	/**
-	 * Maximum distance (in blocks) between the hook's world position and the nearest face of
-	 * the candidate block for a disassembly-time block re-anchor to be considered "this is
-	 * still visually the same anchor." Beyond this, the disassembly moved geometry enough
-	 * that a silent re-anchor would look like a teleport, so we detach instead.
-	 */
 	private static final double DISASSEMBLY_REANCHOR_MAX_DIST = 1.47;
 
-	/**
-	 * Called by contraption-integration compat modules when a contraption is about to be
-	 * removed because of disassembly (blocks being placed back into the world). For each
-	 * hook anchored to this contraption, attempts a precise re-anchor to the block that
-	 * just landed under it; if no suitable block is nearby, detaches the hook cleanly.
-	 */
 	public static void onContraptionDisassembled(Entity contraptionEntity) {
 		ContraptionIntegration ci = GrappleModIntegrations.getContraptionIntegration();
 		if (ci == null || !ci.isContraption(contraptionEntity)) return;
@@ -1032,12 +819,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		}
 	}
 
-	/**
-	 * Called by the Sable compat module when it observes a new sub-level UUID appear
-	 * (e.g. a {@code PhysicsAssemblerBlockEntity} just converted a structure). Migrates
-	 * any active hook anchored to a block that the sub-level absorbed onto the
-	 * sub-level itself, preserving sub-block hit precision.
-	 */
 	public static void onSubLevelAssembled(UUID subLevelId, Level level) {
 		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
 		if (!sli.isSubLevelLoaded(subLevelId)) return;
@@ -1062,12 +843,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		}
 	}
 
-	/**
-	 * Called by the Sable compat module when a tracked sub-level UUID disappears
-	 * (disassembly, unload, etc.). For each hook anchored to this sub-level, attempts
-	 * a precise re-anchor to the world block that the anchored plot block just landed
-	 * at; if no suitable block is present, detaches the hook cleanly.
-	 */
 	public static void onSubLevelDisassembled(UUID subLevelId, Level level) {
 		if (level.isClientSide) return;
 		SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
@@ -1095,7 +870,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 				hook.reattachToBlock(candidate, hookPos);
 			} catch (Throwable err) {
-				// Don't let one broken reattach take down the rest of the loop or the server.
 				GrappleMod.LOGGER.error("[Grapple <-> Sable] onSubLevelDisassembled: reattach for hook {} failed; detaching as fallback",
 						hook != null ? hook.getId() : "null", err);
 				if (hook != null && hook.isAlive()) {
@@ -1105,20 +879,12 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		}
 	}
 
-	/**
-	 * Server-side: switch this hook's anchor from a static block onto a sub-level that
-	 * just absorbed it. Mirror of {@link #reattachToContraption} but keyed by UUID.
-	 */
 	public void reattachToSubLevel(UUID subLevelId, BlockPos plotBlock, Vec3 plotHitPoint) {
 		if (this.level().isClientSide) return;
 		if (this.attachment == null) return;
 
 		this.setAttachment(new HookAttachment.SubLevelBlock(subLevelId, plotBlock, plotHitPoint));
 
-		// Full re-attach packet: no lightweight reanchor payload exists for sub-levels
-		// yet, and the client needs the UUID/plotBlock/plotHitPoint to rebuild the
-		// attachment. Safe here because this path runs off an assembly event, not from
-		// the client-side physics controller's shutdown sequence.
 		Vec3 anchor = this.attachment.worldHitPoint(CONTRAPTION_PARTIAL_TICKS);
 		this.setPosRaw(anchor.x, anchor.y, anchor.z);
 		this.setDeltaMovement(0, 0, 0);
@@ -1143,11 +909,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		return Math.sqrt(dx * dx + dy * dy + dz * dz);
 	}
 
-	/**
-	 * Inverse of {@link #reattachToContraption}: switch a contraption-anchored hook onto a
-	 * static block at {@code blockPos}. The hook's world position is pinned to {@code hookWorldPos}
-	 * (the last known contraption-tracked position) so the visual anchor doesn't jump.
-	 */
 	public void reattachToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
 		if (this.level().isClientSide) return;
 
@@ -1162,11 +923,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
 	}
 
-	/**
-	 * Tell the shooter's client to detach this hook and clean up server state.
-	 * Used when a contraption our hook was following disassembles without a suitable
-	 * block underneath.
-	 */
 	public void detachFromContraption() {
 		if (this.level().isClientSide) return;
 		if (this.shootingEntityID != 0) {
@@ -1179,7 +935,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.removeServer();
 	}
 
-	/** Client-side mirror of {@link #reattachToBlock}. Updates entity state without touching the controller. */
 	public void clientReanchorToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
 		this.setAttachment(new HookAttachment.Block(blockPos, hookWorldPos, null));
 		this.setPosRaw(hookWorldPos.x, hookWorldPos.y, hookWorldPos.z);
@@ -1197,7 +952,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		GrappleModClientEvents.HOOK_ATTACH.invoker().onHookAttach(this.shootingEntity, this);
 	}
 
-	// this mostly comes from packets
 	public void setAttachPos(Vector3f attachPos) {
 		float x = attachPos.x;
 		float y = attachPos.y;
@@ -1210,12 +964,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
         this.thisPos = new Vec(x, y, z);
 	}
 
-	// used for magnet attraction
-
-	/**
-	 * Checks all the block positions within a certain "radius" (+- radius in each axis)
-	 * around the center to see if the hook could successfully collide with them.
-	 */
 	public Optional<BlockPos> checkForMagnetTargetsNearby(Vec center, HashMap<BlockPos, Boolean> cachedPositions) {
     	int radius = (int) Math.floor(this.customization.get(MAGNET_RADIUS.get()));
 
@@ -1248,13 +996,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 		return Optional.ofNullable(closestValidPos);
 	}
-	// used for magnet attraction
 
-	/**
-	 * Checks if the hook has collided with a block, caching the check to the provided HashMap.
-	 * Ensures that if there is a collision, the collided block matches the allowed / disallowed
-	 * tags & gamerules.
-	 */
 	public boolean checkIfCollidingWithBlock(BlockPos pos, HashMap<BlockPos, Boolean> cachedPositions) {
 		if(cachedPositions.containsKey(pos))
 			return cachedPositions.get(pos);
@@ -1274,7 +1016,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	}
 
 	private boolean canAttachToBlock(BlockState blockState) {
-		// "Limited Hook" mode acts as a whitelist. Default behaviour uses a blacklist.
 		return this.level().getGameRules().getBoolean(ModGamerules.USE_LIMITED_HOOK)
 				? blockState.is(ModTags.LIMITED_HOOK_ALLOWED)
 				: !blockState.is(ModTags.HOOK_DISALLOWED);
@@ -1300,46 +1041,12 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		return this.isAttachedToMainHand;
 	}
 
-	/**
-	 * World-space point where the rope meets the holder — the holder's eye
-	 * position. Used as the player-endpoint for rope wrap/unwrap physics.
-	 *
-	 * <p>This was briefly computed from the holder's hand position to match the
-	 * renderer's visible rope line. Hand-based placement aligns bend positions
-	 * with rendered geometry more precisely (~fraction of a block), but the
-	 * hand sits at roughly torso height — often inside the apparent AABB of a
-	 * sub-level the player is standing on. Rope segments adjacent to a hand
-	 * endpoint inside a ship's bbox unavoidably cross ship blocks, producing
-	 * cascading bend insertions that were hard to prevent without breaking
-	 * legitimate wraps. Eye sits above the block the player is standing on,
-	 * which sidesteps the whole class of issues. v1 used eye for years with
-	 * no reports of bend-alignment problems; the tiny visual discrepancy
-	 * against the rendered hand-based rope is negligible in practice.</p>
-	 *
-	 * <p>Method name kept for continuity with call sites. Falls back to the
-	 * hook's own position if the holder has been cleared (e.g. shooter
-	 * disconnected) — callers of rope updates shouldn't be running in that
-	 * state, but the guard avoids a NullPointer.</p>
-	 */
 	public Vec getRopeOriginAtHolder() {
 		Entity shooter = this.shootingEntity;
 		if (shooter == null) return Vec.positionVec(this);
 		return Vec.positionVec(shooter).add(new Vec(0, shooter.getEyeHeight(), 0));
 	}
 
-	/**
-	 * The hook's world position as the rope sees it — same as {@link Vec#positionVec}
-	 * for an in-flight or entity-attached hook, but nudged outward from the attach
-	 * face by {@link #ROPE_ANCHOR_FACE_OFFSET} when the hook is stuck on a block
-	 * (world block, Create contraption block, or Sable sub-level block). The
-	 * hit-point world coord lives exactly on the block face, so any pose drift or
-	 * numerical slop can land the rope's starting raycast a hair inside the solid
-	 * VoxelShape — which {@link com.yyon.grapplinghook.physics.raycast.MultiSpaceRaycaster}
-	 * then reports as an immediate hit against the same block the hook is in, and
-	 * the rope visually clips through. Pushing the rope's starting point outward
-	 * along the attach face avoids that. The hook entity itself still sits at the
-	 * exact hit point, so visually it remains lodged in the block.
-	 */
 	public Vec getRopeAnchorHookPos() {
 		Vec pos = Vec.positionVec(this);
 		if (this.attachment == null) return pos;
@@ -1351,7 +1058,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				face.getStepZ() * ROPE_ANCHOR_FACE_OFFSET));
 	}
 
-	/** Same outward offset used for non-endpoint rope bends (see {@code CONTRAPTION_BEND_OFFSET}). */
 	private static final double ROPE_ANCHOR_FACE_OFFSET = 0.08;
 
 	public Vec getSurfaceAttachmentDirection() {
@@ -1362,11 +1068,6 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		return this.ropeLength;
 	}
 
-	/**
-	 * The world entity this hook is anchored to, if any. Covers both plain-entity attaches
-	 * (mobs, boats) and contraption attaches — anything where the rope follows a moving
-	 * world object. Returns {@code null} for block attaches and unattached hooks.
-	 */
 	public @Nullable Entity attachedWorldEntity() {
 		return switch (this.attachment) {
 			case HookAttachment.Entity e -> e.entity();
@@ -1375,32 +1076,17 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		};
 	}
 
-	/**
-	 * True iff the hook's current anchor is a moving body (plain entity, Create
-	 * contraption, or Sable sub-level) — anything whose world-space position
-	 * changes between ticks. Callers that previously special-cased the two
-	 * entity-backed variants should use this so {@link HookAttachment.SubLevelBlock}
-	 * also suppresses server position-sync lerp and similar static-target
-	 * fast-paths.
-	 */
 	public boolean isAttachedToMovingBody() {
 		return this.attachedWorldEntity() != null
 				|| this.attachment instanceof HookAttachment.SubLevelBlock;
 	}
 
-	/** The authoritative attachment state. {@code null} if the hook is in flight or detached. */
 	public @Nullable HookAttachment attachment() { return this.attachment; }
 
-	/** Client-side mutation point for attachment state. Wraps the private {@link #setAttachment}. */
 	public void setAttachmentClient(@Nullable HookAttachment next) {
 		this.setAttachment(next);
 	}
 
-	/**
-	 * Sole write path for {@link #attachment}. Also updates the {@link #isAttachedToSurface}
-	 * spawn-packet replication flag so spectator clients continue to see the hook as frozen
-	 * or in-flight without receiving the full variant.
-	 */
 	private void setAttachment(@Nullable HookAttachment next) {
 		this.attachment = next;
 		this.isAttachedToSurface = (next != null);

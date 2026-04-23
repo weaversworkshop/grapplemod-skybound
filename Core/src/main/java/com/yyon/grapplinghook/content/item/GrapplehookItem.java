@@ -19,6 +19,7 @@ import com.yyon.grapplinghook.network.clientbound.DetachSingleHookS2CPayload;
 import com.yyon.grapplinghook.network.clientbound.GrappleDetachS2CPayload;
 import com.yyon.grapplinghook.network.serverbound.KeypressC2SPayload;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
+import com.yyon.grapplinghook.physics.raycast.MultiSpaceRaycaster;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.TextUtils;
 import com.yyon.grapplinghook.util.Vec;
@@ -443,10 +444,6 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		return SoundEvents.VILLAGER_WORK_TOOLSMITH;
 	}
 
-	/**
-	 * Applies customizations and removes the template metadata.
-	 * To retain the metadata, call #applyTemplateMetadata(...) after calling this.
-	 */
 	@Override
 	public void applyCustomizations(ItemStack stack, HookCustomization custom) {
 		stack.remove(ModDataComponents.AUTHORED);
@@ -548,9 +545,6 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		if (hookMainHand != null) hookMainHand.removeServer();
 
 		int id = thrower.getId();
-		com.yyon.grapplinghook.GrappleMod.LOGGER.info("[HookDbg] detachBoth thrower={} caller={}",
-				id,
-				Thread.currentThread().getStackTrace()[2].getMethodName());
 		GrappleModServerEvents.HOOK_RETRACT.invoker().onHookRetracted(thrower);
 		GrappleModUtils.sendToCorrectClient(new GrappleDetachS2CPayload(id), thrower.getId(), thrower.level());
 	}
@@ -593,18 +587,6 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		}
 	}
 	
-	/**
-	 * If the thrower is sneaking and the hook is attached to a LivingEntity,
-	 * fling that entity toward the thrower on release.
-	 *
-	 * <p>Direction is mob→player with a small upward bias (~10°) that's
-	 * damped when the mob is above the player, so shooting a mob from below
-	 * doesn't launch it further upward. Magnitude scales with sqrt(distance)
-	 * times the configurable {@code flingBasePower}.</p>
-	 *
-	 * <p>Sets the mob's velocity on the server and marks it {@code hurtMarked}
-	 * so the entity tracker flushes the motion to clients on the next tick.</p>
-	 */
 	private void tryFlingAttachedEntity(LivingEntity thrower, GrapplinghookEntity hook) {
 		if (hook == null) return;
 		if (!thrower.isCrouching()) return;
@@ -613,17 +595,19 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 		Entity attached = hook.attachedWorldEntity();
 		if (!(attached instanceof LivingEntity mob)) return;
 
-		Vec3 mobToPlayer = thrower.position().subtract(mob.position());
-		double dist = mobToPlayer.length();
-		if (dist < 1.0E-3) return;
+		Vec3 mobPos = mob.position();
+		Vec3 playerPos = thrower.position().add(0, thrower.getEyeHeight(), 0);
+		Vec3 pullVec = playerPos.subtract(mobPos);
+		double flingDist = playerPos.subtract(mobPos).length();
+		if (flingDist < 1.0E-3) return;
 
-		Vec3 dir = mobToPlayer.scale(1.0 / dist);
+		Vec3 dir = pullVec.scale(1.0 / flingDist);
 
 		double verticalBias = Math.sin(Math.toRadians(GrapplePropertyConfigLoader.CONFIG.flingVerticalAngle));
 		double biasScale = Math.max(0.0, 1.0 - Math.abs(dir.y));
 		Vec3 biasedDir = new Vec3(dir.x, dir.y + verticalBias * biasScale, dir.z).normalize();
 
-		double magnitude = Math.sqrt(dist) * GrapplePropertyConfigLoader.CONFIG.flingBasePower;
+		double magnitude = Math.sqrt(flingDist) * GrapplePropertyConfigLoader.CONFIG.flingBasePower;
 		Vec3 velocity = biasedDir.scale(magnitude);
 
 		mob.setDeltaMovement(velocity);
@@ -633,12 +617,6 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 	public GrapplinghookEntity createGrapplehookEntity(ItemStack stack, Level worldIn, LivingEntity entityLiving, boolean isMainHand, boolean isDoublePair) {
 		GrapplinghookEntity hookEntity = new GrapplinghookEntity(worldIn, entityLiving, isMainHand, this.getCustomizationsOrDefault(stack), isDoublePair);
 		ServerHookEntityTracker.addGrappleEntity(entityLiving, hookEntity);
-		com.yyon.grapplinghook.GrappleMod.LOGGER.info("[HookDbg] THROW shooter={} side={} hookId={} pos={} mainHand={}",
-				entityLiving.getId(),
-				worldIn.isClientSide ? "C" : "S",
-				hookEntity.getId(),
-				hookEntity.position(),
-				isMainHand);
 		return hookEntity;
 	}
 
@@ -702,10 +680,6 @@ public class GrapplehookItem extends Item implements IGlobalKeyObserver, IDropHa
 				: custom.get(DOUBLE_HOOK_ANGLE.get());
 	}
 
-	/**
-	 * If a hook doesn't have customizations, it should just use the default set without
-	 * saving it to the item itself.
-	 */
 	public HookCustomization getCustomizationsOrDefault(ItemStack stack) {
 		return stack.getOrDefault(ModDataComponents.CUSTOMIZABLE, new HookCustomization());
 	}

@@ -24,23 +24,14 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-/**
- * Sable-backed {@link SubLevelIntegration}. Keeps an internal
- * {@code UUID → (SubLevel, Level)} cache, refreshed by the tick poll in
- * {@link SableCompatModule}. This means the SPI surface itself stays level-free —
- * Core can call {@link #plotToWorld} without knowing which Minecraft level the
- * sub-level lives in.
- */
 public class SableSubLevelIntegration implements SubLevelIntegration {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    /** Concurrent because tick-poll writes and physics-thread reads can interleave. */
     private final Map<UUID, Tracked> tracked = new ConcurrentHashMap<>();
 
     private record Tracked(SubLevel subLevel, Level level) {}
 
-    /** Called by {@link SableCompatModule} each tick for every live sub-level. */
     void trackSubLevel(UUID id, SubLevel subLevel, Level level) {
         Tracked prior = tracked.put(id, new Tracked(subLevel, level));
         if (prior == null) {
@@ -49,7 +40,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         }
     }
 
-    /** Called by {@link SableCompatModule} when a UUID disappears from the container. */
     void untrackSubLevel(UUID id) {
         Tracked removed = tracked.remove(id);
         if (removed != null) {
@@ -62,8 +52,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
     public boolean isSubLevelLoaded(UUID subLevelId) {
         Tracked t = tracked.get(subLevelId);
         if (t == null) return false;
-        // Sable marks the SubLevel removed during disassembly; treat it as unloaded
-        // even if our tick-poll hasn't yet observed the UUID disappear from the container.
         if (t.subLevel.isRemoved()) return false;
         return true;
     }
@@ -94,10 +82,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         return closest;
     }
 
-    /**
-     * Slab-method ray/AABB test returning [entry-t, exit-t] along the ray, or {@code null}
-     * if no intersection in [0,1]. Standard; nothing Sable-specific.
-     */
     private static double @Nullable [] rayAabbIntersect(Vec3 from, Vec3 to,
                                                          double minX, double minY, double minZ,
                                                          double maxX, double maxY, double maxZ) {
@@ -139,9 +123,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         BlockPos hit = voxelTraverse(t.subLevel, plotStart, plotEnd);
         if (hit == null) return null;
 
-        // Compute the actual point where the plot-space ray enters the hit block's
-        // AABB, not just the block centre. Snapping to the centre looked like a
-        // teleport when grappling near a face edge.
         double[] tRange = rayAabbIntersect(plotStart, plotEnd,
                 hit.getX(), hit.getY(), hit.getZ(),
                 hit.getX() + 1, hit.getY() + 1, hit.getZ() + 1);
@@ -153,7 +134,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
                     plotStart.y + (plotEnd.y - plotStart.y) * tEnter,
                     plotStart.z + (plotEnd.z - plotStart.z) * tEnter);
         } else {
-            // Degenerate ray (zero-length or numerical edge case) — fall back to centre.
             plotEntry = new Vec3(hit.getX() + 0.5, hit.getY() + 0.5, hit.getZ() + 0.5);
         }
         return pose.transformPosition(plotEntry);
@@ -171,7 +151,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         VoxelHit hit = voxelTraverseDetailed(t.subLevel, plotStart, plotEnd);
         if (hit == null) return null;
 
-        // Compute plot-space entry point on the hit block's AABB, same as raycastSubLevel.
         double[] tRange = rayAabbIntersect(plotStart, plotEnd,
                 hit.pos.getX(), hit.pos.getY(), hit.pos.getZ(),
                 hit.pos.getX() + 1, hit.pos.getY() + 1, hit.pos.getZ() + 1);
@@ -187,20 +166,11 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         }
 
         Vec3 worldHit = pose.transformPosition(plotEntry);
-        // Face is stored in plot-space; for translation-only poses (the common
-        // Aeronautics case) this is identical to world-space, so we pass it
-        // through untransformed. See project_v2_rope_rotation_limitation.md —
-        // rotated sub-levels need pose.transformDirection (future SPI work).
         return new SubLevelRaycastHit(worldHit, hit.face, plotEntry, hit.pos);
     }
 
     private record VoxelHit(BlockPos pos, Direction face) {}
 
-    /**
-     * One-shot diagnostic: scan a 16-block tall column at the ray's entry (x,z) and
-     * log every non-air Y. Currently unused — kept as a callable helper for future
-     * debugging since it is self-contained and non-intrusive.
-     */
     @SuppressWarnings("unused")
     private static void diagnoseChunkColumn(SubLevel subLevel, Vec3 plotStart) {
         LevelPlot plot = subLevel.getPlot();
@@ -244,9 +214,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
             }
             LOGGER.info("[Grapple <-> Sable]   chunk non-air total={} firstSample=({}, {}, {})", nonAirTotal, sampleX, sampleY, sampleZ);
 
-            // Pose sanity check: dump the raw pose fields, then forward-transform the
-            // sample block's plot position to see what apparent-world position Sable
-            // reports for it. That world position should be inside sl.boundingBox().
             if (sampleX >= 0) {
                 Pose3dc pose = subLevel.logicalPose();
                 var pp = pose.position();
@@ -256,7 +223,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
                         pp.x(), pp.y(), pp.z(), pr.x(), pr.y(), pr.z(),
                         bb.minX(), bb.minY(), bb.minZ(), bb.maxX(), bb.maxY(), bb.maxZ());
 
-                // Log ALL non-air blocks' world positions so we can see where the ship actually is visually.
                 LOGGER.info("[Grapple <-> Sable]   All non-air block world positions:");
                 int logged = 0;
                 outer2:
@@ -279,22 +245,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         }
     }
 
-    /**
-     * Amanatides-Woo voxel traversal through the sub-level's block grid in plot space.
-     * Returns the first solid {@link BlockPos}, or {@code null} on miss.
-     *
-     * <p>Reads blocks via {@link LevelPlot#getChunk(ChunkPos)} directly — emphatically
-     * NOT via {@code EmbeddedPlotLevelAccessor.getBlockState}, which delegates back to
-     * {@code Level.getBlockState} and triggers vanilla chunk generation at plot coords
-     * (which live in the 20-million range and blow up the chunk generator). The
-     * {@link LevelPlot#contains(ChunkPos)} guard short-circuits any probe outside the
-     * plot's allocated region.</p>
-     */
-    /**
-     * Detailed variant of {@link #voxelTraverse}: also returns the face direction
-     * crossed on entry to the hit cell (in plot-space coords). Used by
-     * {@link #raycastSubLevelDetailed}. Implementation is otherwise identical.
-     */
     private static @Nullable VoxelHit voxelTraverseDetailed(SubLevel subLevel, Vec3 from, Vec3 to) {
         LevelPlot plot = subLevel.getPlot();
         if (plot == null) return null;
@@ -315,12 +265,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         double tMaxY = stepY > 0 ? (y + 1 - from.y) / dy : stepY < 0 ? (from.y - y) / -dy : Double.POSITIVE_INFINITY;
         double tMaxZ = stepZ > 0 ? (z + 1 - from.z) / dz : stepZ < 0 ? (from.z - z) / -dz : Double.POSITIVE_INFINITY;
 
-        // Face crossed to enter the current cell. For i=0 we haven't stepped yet;
-        // the ray either starts inside the cell or entered it through one of the
-        // boundary axes. Seed with the axis whose slab provided tmin (the "dominant"
-        // entry face) by picking the closest of the initial tMax values — whichever
-        // axis has the smallest tMax is the one the ray *would* cross first, which
-        // is also the axis it most recently crossed to arrive here.
         Direction entryFace;
         if (stepX != 0 && tMaxX <= tMaxY && tMaxX <= tMaxZ) {
             entryFace = stepX > 0 ? Direction.WEST : Direction.EAST;
@@ -357,11 +301,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
                 z += stepZ; tMaxZ += tDeltaZ;
                 entryFace = stepZ > 0 ? Direction.NORTH : Direction.SOUTH;
             }
-            // No tMax-based early exit: it preempts the next iteration's check of
-            // the end voxel, which is often the block we need to hit (e.g. sable
-            // on the far side of a rope attached to a world block). The endX/Y/Z
-            // check above is the correct termination; the 256 iter cap bounds
-            // degenerate rays.
         }
         return null;
     }
@@ -387,8 +326,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         double tMaxZ = stepZ > 0 ? (z + 1 - from.z) / dz : stepZ < 0 ? (from.z - z) / -dz : Double.POSITIVE_INFINITY;
 
         for (int i = 0; i < 256; i++) {
-            // contains(ChunkPos) takes GLOBAL chunk coords; getChunk(ChunkPos) takes
-            // LOCAL (indexed within this plot). toLocal does the subtraction.
             ChunkPos globalChunkPos = new ChunkPos(x >> 4, z >> 4);
             if (plot.contains(globalChunkPos)) {
                 LevelChunk chunk = plot.getChunk(plot.toLocal(globalChunkPos));
@@ -406,7 +343,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
             if (tMaxX < tMaxY && tMaxX < tMaxZ) { x += stepX; tMaxX += tDeltaX; }
             else if (tMaxY < tMaxZ)             { y += stepY; tMaxY += tDeltaY; }
             else                                 { z += stepZ; tMaxZ += tDeltaZ; }
-            // See voxelTraverseDetailed: no tMax early-exit (would skip the end voxel).
         }
         return null;
     }
@@ -448,10 +384,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         Tracked t = tracked.get(subLevelId);
         if (t == null) return null;
 
-        // Project the world block's centre into plot space and check whether Sable has
-        // a real block there. Freshly-captured assembly state should map cleanly, but
-        // pose rotation/offset or the centre sitting right on a plot-cell boundary can
-        // land us one cell off — scan a 3×3×3 neighbourhood as a fallback.
         Vec3 worldCentre = new Vec3(worldPos.getX() + 0.5, worldPos.getY() + 0.5, worldPos.getZ() + 0.5);
         Vec3 plotPoint = t.subLevel.logicalPose().transformPositionInverse(worldCentre);
         BlockPos centre = BlockPos.containing(plotPoint);
@@ -462,7 +394,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         BlockPos hit = probeNonAir(plot, centre);
         if (hit != null) return hit;
 
-        // Neighbourhood fallback, nearest-first.
         for (int r = 1; r <= 1; r++) {
             for (int dx = -r; dx <= r; dx++)
                 for (int dy = -r; dy <= r; dy++)
@@ -483,7 +414,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         return null;
     }
 
-    /** Returns {@code probe} if the plot has a non-air block there, else {@code null}. */
     private static @Nullable BlockPos probeNonAir(LevelPlot plot, BlockPos probe) {
         ChunkPos globalChunkPos = new ChunkPos(probe.getX() >> 4, probe.getZ() >> 4);
         if (!plot.contains(globalChunkPos)) return null;
@@ -493,7 +423,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         return state.isAir() ? null : probe;
     }
 
-    /** Exposes the tracked {@link Level} for a UUID — used by the mixin to look up pose. */
     public @Nullable SubLevel getSubLevel(UUID subLevelId) {
         Tracked t = tracked.get(subLevelId);
         return t != null ? t.subLevel : null;
@@ -531,10 +460,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         ChunkPos chunkPos = new ChunkPos(plotPos.getX() >> 4, plotPos.getZ() >> 4);
         for (Map.Entry<UUID, Tracked> entry : tracked.entrySet()) {
             SubLevel sl = entry.getValue().subLevel;
-            // Skip stale entries that Sable has marked removed but our tick poll
-            // hasn't untracked yet. Plot regions can be reused by a successor
-            // SubLevel with a different UUID, so returning the stale UUID would
-            // cause the next follow tick to detach immediately.
             if (sl.isRemoved()) continue;
             LevelPlot plot = sl.getPlot();
             if (plot == null) continue;

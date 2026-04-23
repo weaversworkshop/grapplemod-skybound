@@ -62,23 +62,7 @@ public class GrappleModUtils {
 		GrappleMod.LOGGER.warn("ERROR! couldn't find player");
 	}
 
-	/**
-	 * World-space block raycast for rope wrap / hook collision. Walks voxels via
-	 * Amanatides-Woo DDA and per-voxel {@link VoxelShape#clip} instead of routing
-	 * through {@link Level#clip}, because Sable patches {@code BlockGetter.clip}
-	 * (its mixin transforms any ray that crosses a sub-level's apparent AABB into
-	 * plot-space and walks millions of voxels there — see
-	 * project_sable_rope_raytrace_hang.md). Calling {@link Level#getBlockState}
-	 * directly bypasses the mixin entirely.
-	 *
-	 * <p>Semantically equivalent to {@code Level.clip(ClipContext.Block.COLLIDER,
-	 * ClipContext.Fluid.NONE)} for the shapes grapplemod cares about — air skip,
-	 * per-block collision shape, precise sub-voxel face hit. The {@code entity}
-	 * parameter is preserved for API compatibility but unused: COLLIDER +
-	 * non-fluid clipping never consults it in vanilla either.</p>
-	 *
-	 * @return the hit on a solid block face, or {@code null} on miss.
-	 */
+	// Manual DDA via Level.getBlockState to bypass Sable's BlockGetter.clip mixin which hangs on sublevel rays.
 	@SuppressWarnings("unused")
 	public static BlockHitResult rayTraceBlocks(Entity entity, Level world, Vec from, Vec to) {
 		Vec3 start = from.toVec3d();
@@ -103,18 +87,6 @@ public class GrappleModUtils {
 		double tMaxY = stepY > 0 ? (y + 1 - start.y) / dy : stepY < 0 ? (start.y - y) / -dy : Double.POSITIVE_INFINITY;
 		double tMaxZ = stepZ > 0 ? (z + 1 - start.z) / dz : stepZ < 0 ? (start.z - z) / -dz : Double.POSITIVE_INFINITY;
 
-		// Safety cap: rope segments are bounded by ropeLength (<100 blocks), so 1024
-		// voxels is far more than any legitimate raycast could need. Prevents an
-		// infinite loop on a degenerate ray.
-		//
-		// Loop structure: check current voxel, return null if it's the end voxel
-		// (we've visited every voxel the ray passes through), otherwise step. Do NOT
-		// early-exit on "all tMax > 1" — that check fires after a step that lands
-		// us *in* the end voxel, which preempts the next iteration's check of that
-		// voxel. For a grapple attached to a block, the rope-end ray's end voxel is
-		// typically the attach block itself; missing it means wrap corner-hunt sees
-		// no hit and bends never form. The endX/endY/endZ termination catches valid
-		// rays correctly; 1024 iter cap catches degenerate geometry.
 		BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
 		for (int i = 0; i < 1024; i++) {
 			probe.set(x, y, z);
