@@ -48,7 +48,7 @@ public final class WrapEdgeFinder {
         return null;
     }
 
-    static @Nullable AABB findBoxContainingHit(List<AABB> boxes, Vec3 hitPoint, Direction hitFace) {
+    public static @Nullable AABB findBoxContainingHit(List<AABB> boxes, Vec3 hitPoint, Direction hitFace) {
         double tolerance = 1e-4;
         for (AABB box : boxes) {
             double planeCoord = facePlaneCoord(box, hitFace);
@@ -59,7 +59,7 @@ public final class WrapEdgeFinder {
         return null;
     }
 
-    static List<Direction> rankedWrapFaces(BlockGetter level, BlockPos blockPos, AABB hitBox,
+    public static List<Direction> rankedWrapFaces(@Nullable BlockGetter level, @Nullable BlockPos blockPos, AABB hitBox,
                                            Direction hitFace, Vec3 hitPoint, Vec3 rayEnd,
                                            List<AABB> worldBoxes) {
         Direction.Axis hitAxis = hitFace.getAxis();
@@ -92,7 +92,7 @@ public final class WrapEdgeFinder {
         return out;
     }
 
-    static boolean isEdgeInterior(BlockGetter level, BlockPos blockPos, AABB hitBox,
+    static boolean isEdgeInterior(@Nullable BlockGetter level, @Nullable BlockPos blockPos, AABB hitBox,
                                   Direction hitFace, Direction candidate, List<AABB> worldBoxes) {
         Direction.Axis hitAxis = hitFace.getAxis();
         Direction.Axis candAxis = candidate.getAxis();
@@ -112,6 +112,8 @@ public final class WrapEdgeFinder {
             if (other == hitBox) continue;
             if (other.contains(probe)) return true;
         }
+
+        if (level == null || blockPos == null) return false;
 
         BlockPos probeBlockPos = BlockPos.containing(probe);
         if (!probeBlockPos.equals(blockPos)) {
@@ -158,7 +160,7 @@ public final class WrapEdgeFinder {
         return false;
     }
 
-    static Vec computeBendPoint(AABB hitBox, Direction hitFace, Direction wrapFace,
+    public static Vec computeBendPoint(AABB hitBox, Direction hitFace, Direction wrapFace,
                                 Vec3 hitPoint, Vec3 rayEnd) {
         Direction.Axis hitAxis = hitFace.getAxis();
         Direction.Axis wrapAxis = wrapFace.getAxis();

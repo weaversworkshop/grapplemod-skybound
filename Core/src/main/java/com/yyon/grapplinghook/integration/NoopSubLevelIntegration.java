@@ -5,6 +5,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -52,6 +53,11 @@ public final class NoopSubLevelIntegration implements SubLevelIntegration {
     @Override
     public boolean isPlotBlockSolid(UUID subLevelId, BlockPos plotBlock) {
         return false;
+    }
+
+    @Override
+    public List<AABB> getPlotCollisionBoxes(UUID subLevelId, BlockPos plotBlock) {
+        return List.of();
     }
 
     @Override

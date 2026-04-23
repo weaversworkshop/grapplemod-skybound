@@ -13,7 +13,6 @@ import com.yyon.grapplinghook.integration.GrappleModIntegrations;
 import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import com.yyon.grapplinghook.physics.raycast.MultiSpaceRaycaster;
-import com.yyon.grapplinghook.physics.raycast.PlotSpaceEdgeWrap;
 import com.yyon.grapplinghook.physics.raycast.WrapEdgeFinder;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.NullableDirection;
@@ -405,11 +404,20 @@ public class RopeSegmentHandler {
 		Vec3 plotHit = hit.nativeHit();
 		Vec3 plotBendPos;
 
-		if (plotBlock != null) {
+		if (plotBlock != null && face != null) {
 			Vec3 plotRayEnd = sli.worldToPlot(sl.subLevelId(), top.toVec3d(), CONTRAPTION_PARTIAL_TICKS);
-			PlotSpaceEdgeWrap.Result wrap = PlotSpaceEdgeWrap.findWrap(plotBlock, face, plotHit, plotRayEnd);
-			if (wrap != null) {
-				plotBendPos = wrap.plotBendPos();
+			java.util.List<net.minecraft.world.phys.AABB> plotBoxes = sli.getPlotCollisionBoxes(sl.subLevelId(), plotBlock);
+			net.minecraft.world.phys.AABB hitBox = WrapEdgeFinder.findBoxContainingHit(plotBoxes, plotHit, face);
+			Vec wrapBend = null;
+			if (hitBox != null) {
+				java.util.List<Direction> ranked = WrapEdgeFinder.rankedWrapFaces(null, null, hitBox, face, plotHit, plotRayEnd, plotBoxes);
+				for (Direction wrapFace : ranked) {
+					wrapBend = WrapEdgeFinder.computeBendPoint(hitBox, face, wrapFace, plotHit, plotRayEnd);
+					break;
+				}
+			}
+			if (wrapBend != null) {
+				plotBendPos = new Vec3(wrapBend.x, wrapBend.y, wrapBend.z);
 			} else {
 				plotBendPos = plotHit.add(
 						face.getStepX() * SUBLEVEL_BEND_OFFSET,

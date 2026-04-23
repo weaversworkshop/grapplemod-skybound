@@ -19,6 +19,8 @@ import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -151,25 +153,68 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         VoxelHit hit = voxelTraverseDetailed(t.subLevel, plotStart, plotEnd);
         if (hit == null) return null;
 
-        double[] tRange = rayAabbIntersect(plotStart, plotEnd,
-                hit.pos.getX(), hit.pos.getY(), hit.pos.getZ(),
-                hit.pos.getX() + 1, hit.pos.getY() + 1, hit.pos.getZ() + 1);
-        Vec3 plotEntry;
-        if (tRange != null) {
-            double tEnter = Math.max(0.0, tRange[0]);
-            plotEntry = new Vec3(
-                    plotStart.x + (plotEnd.x - plotStart.x) * tEnter,
-                    plotStart.y + (plotEnd.y - plotStart.y) * tEnter,
-                    plotStart.z + (plotEnd.z - plotStart.z) * tEnter);
-        } else {
-            plotEntry = new Vec3(hit.pos.getX() + 0.5, hit.pos.getY() + 0.5, hit.pos.getZ() + 0.5);
-        }
-
-        Vec3 worldHit = pose.transformPosition(plotEntry);
-        return new SubLevelRaycastHit(worldHit, hit.face, plotEntry, hit.pos);
+        Vec3 worldHit = pose.transformPosition(hit.plotHit);
+        return new SubLevelRaycastHit(worldHit, hit.face, hit.plotHit, hit.pos);
     }
 
-    private record VoxelHit(BlockPos pos, Direction face) {}
+    private record VoxelHit(BlockPos pos, Direction face, Vec3 plotHit) {}
+
+    private record ShapeHit(double t, Direction face, AABB box) {}
+
+    private static @Nullable ShapeHit intersectShapeInVoxel(BlockState state, BlockPos probe, Vec3 from, Vec3 to) {
+        var shape = state.getCollisionShape(EmptyBlockGetter.INSTANCE, probe);
+        if (shape.isEmpty()) return null;
+        double dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+        double bestT = Double.POSITIVE_INFINITY;
+        Direction bestFace = null;
+        AABB bestBox = null;
+        for (AABB local : shape.toAabbs()) {
+            double minX = local.minX + probe.getX();
+            double minY = local.minY + probe.getY();
+            double minZ = local.minZ + probe.getZ();
+            double maxX = local.maxX + probe.getX();
+            double maxY = local.maxY + probe.getY();
+            double maxZ = local.maxZ + probe.getZ();
+            double tmin = 0, tmax = 1;
+            Direction enterFace = null;
+            boolean missed = false;
+            for (int axis = 0; axis < 3; axis++) {
+                double o = axis == 0 ? from.x : axis == 1 ? from.y : from.z;
+                double d = axis == 0 ? dx : axis == 1 ? dy : dz;
+                double lo = axis == 0 ? minX : axis == 1 ? minY : minZ;
+                double hi = axis == 0 ? maxX : axis == 1 ? maxY : maxZ;
+                if (Math.abs(d) < 1e-9) {
+                    if (o < lo || o > hi) { missed = true; break; }
+                } else {
+                    double t1 = (lo - o) / d;
+                    double t2 = (hi - o) / d;
+                    Direction faceAtT1;
+                    if (axis == 0) faceAtT1 = d > 0 ? Direction.WEST : Direction.EAST;
+                    else if (axis == 1) faceAtT1 = d > 0 ? Direction.DOWN : Direction.UP;
+                    else faceAtT1 = d > 0 ? Direction.NORTH : Direction.SOUTH;
+                    if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; faceAtT1 = faceAtT1.getOpposite(); }
+                    if (t1 > tmin) { tmin = t1; enterFace = faceAtT1; }
+                    if (t2 < tmax) tmax = t2;
+                    if (tmin > tmax) { missed = true; break; }
+                }
+            }
+            if (missed) continue;
+            if (tmin < 0) continue;
+            if (tmin < bestT) {
+                bestT = tmin;
+                bestFace = enterFace;
+                bestBox = new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+            }
+        }
+        if (bestBox == null) return null;
+        if (bestFace == null) {
+            double adx = Math.abs(dx), ady = Math.abs(dy), adz = Math.abs(dz);
+            if (adx >= ady && adx >= adz) bestFace = dx > 0 ? Direction.WEST : Direction.EAST;
+            else if (ady >= adz) bestFace = dy > 0 ? Direction.DOWN : Direction.UP;
+            else bestFace = dz > 0 ? Direction.NORTH : Direction.SOUTH;
+        }
+        return new ShapeHit(bestT, bestFace, bestBox);
+    }
 
     @SuppressWarnings("unused")
     private static void diagnoseChunkColumn(SubLevel subLevel, Vec3 plotStart) {
@@ -265,17 +310,6 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         double tMaxY = stepY > 0 ? (y + 1 - from.y) / dy : stepY < 0 ? (from.y - y) / -dy : Double.POSITIVE_INFINITY;
         double tMaxZ = stepZ > 0 ? (z + 1 - from.z) / dz : stepZ < 0 ? (from.z - z) / -dz : Double.POSITIVE_INFINITY;
 
-        Direction entryFace;
-        if (stepX != 0 && tMaxX <= tMaxY && tMaxX <= tMaxZ) {
-            entryFace = stepX > 0 ? Direction.WEST : Direction.EAST;
-        } else if (stepY != 0 && tMaxY <= tMaxZ) {
-            entryFace = stepY > 0 ? Direction.DOWN : Direction.UP;
-        } else if (stepZ != 0) {
-            entryFace = stepZ > 0 ? Direction.NORTH : Direction.SOUTH;
-        } else {
-            entryFace = Direction.UP;
-        }
-
         for (int i = 0; i < 256; i++) {
             ChunkPos globalChunkPos = new ChunkPos(x >> 4, z >> 4);
             if (plot.contains(globalChunkPos)) {
@@ -283,9 +317,16 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
                 if (chunk != null) {
                     BlockPos probe = new BlockPos(x, y, z);
                     BlockState state = chunk.getBlockState(probe);
-                    if (!state.isAir()
-                            && !state.getCollisionShape(EmptyBlockGetter.INSTANCE, probe).isEmpty()) {
-                        return new VoxelHit(probe, entryFace);
+                    if (!state.isAir()) {
+                        ShapeHit shapeHit = intersectShapeInVoxel(state, probe, from, to);
+                        if (shapeHit != null) {
+                            double tE = shapeHit.t;
+                            Vec3 plotHit = new Vec3(
+                                    from.x + (to.x - from.x) * tE,
+                                    from.y + (to.y - from.y) * tE,
+                                    from.z + (to.z - from.z) * tE);
+                            return new VoxelHit(probe, shapeHit.face, plotHit);
+                        }
                     }
                 }
             }
@@ -293,13 +334,10 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
 
             if (tMaxX < tMaxY && tMaxX < tMaxZ) {
                 x += stepX; tMaxX += tDeltaX;
-                entryFace = stepX > 0 ? Direction.WEST : Direction.EAST;
             } else if (tMaxY < tMaxZ) {
                 y += stepY; tMaxY += tDeltaY;
-                entryFace = stepY > 0 ? Direction.DOWN : Direction.UP;
             } else {
                 z += stepZ; tMaxZ += tDeltaZ;
-                entryFace = stepZ > 0 ? Direction.NORTH : Direction.SOUTH;
             }
         }
         return null;
@@ -412,6 +450,27 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         LOGGER.info("[Grapple <-> Sable] getCapturedPlotPos uuid={} worldPos={} → plotPoint={} plotCentre={} — all 27 cells air, migration will skip.",
                 subLevelId, worldPos, plotPoint, centre);
         return null;
+    }
+
+    @Override
+    public List<AABB> getPlotCollisionBoxes(UUID subLevelId, BlockPos plotBlock) {
+        Tracked t = tracked.get(subLevelId);
+        if (t == null || t.subLevel.isRemoved()) return List.of();
+        LevelPlot plot = t.subLevel.getPlot();
+        if (plot == null) return List.of();
+        ChunkPos chunkPos = new ChunkPos(plotBlock.getX() >> 4, plotBlock.getZ() >> 4);
+        if (!plot.contains(chunkPos)) return List.of();
+        LevelChunk chunk = plot.getChunk(plot.toLocal(chunkPos));
+        if (chunk == null) return List.of();
+        BlockState state = chunk.getBlockState(plotBlock);
+        if (state.isAir()) return List.of();
+        var shape = state.getCollisionShape(EmptyBlockGetter.INSTANCE, plotBlock);
+        if (shape.isEmpty()) return List.of();
+        List<AABB> out = new ArrayList<>();
+        for (AABB local : shape.toAabbs()) {
+            out.add(local.move(plotBlock.getX(), plotBlock.getY(), plotBlock.getZ()));
+        }
+        return out;
     }
 
     @Override

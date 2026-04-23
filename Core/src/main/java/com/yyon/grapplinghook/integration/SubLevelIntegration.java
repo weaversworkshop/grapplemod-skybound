@@ -6,6 +6,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 
@@ -32,6 +33,8 @@ public interface SubLevelIntegration {
     @Nullable BlockPos getCapturedPlotPos(UUID subLevelId, BlockPos worldPos);
 
     boolean isPlotBlockSolid(UUID subLevelId, BlockPos plotBlock);
+
+    List<AABB> getPlotCollisionBoxes(UUID subLevelId, BlockPos plotBlock);
 
     @Nullable UUID findSubLevelForPlotBlock(BlockPos plotPos);
 
