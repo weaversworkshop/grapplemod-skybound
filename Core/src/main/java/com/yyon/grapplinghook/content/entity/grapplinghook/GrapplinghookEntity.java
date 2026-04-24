@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.content.entity.grapplinghook;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.api.GrappleModServerEvents;
+import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.client.api.GrappleModClientEvents;
 import com.yyon.grapplinghook.content.registry.internal.*;
@@ -37,8 +38,11 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ThrowableItemProjectile;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -102,6 +106,9 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	public BlockPos magnetBlock = null;
 
 	@Nullable private HookAttachment attachment = null;
+
+	private int cutCount = 0;
+	private int lastCutTick = -10000;
 
 	public GrapplinghookEntity(EntityType<? extends GrapplinghookEntity> type, Level world) {
 		super(type, world);
@@ -278,6 +285,39 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	@Override
 	protected void onHit(HitResult hit) {
 		HookHitDispatcher.dispatch(this, hit);
+	}
+
+	@Override
+	public boolean isPickable() {
+		return GrappleModCommonConfig.get().isHookCuttingEnabled();
+	}
+
+	@Override
+	public InteractionResult interact(Player player, InteractionHand hand) {
+		if (this.level().isClientSide) {
+			return player.getItemInHand(hand).getItem() == Items.SHEARS
+					? InteractionResult.SUCCESS
+					: InteractionResult.PASS;
+		}
+
+		GrappleModCommonConfig config = GrappleModCommonConfig.get();
+		if (!config.isHookCuttingEnabled()) return InteractionResult.PASS;
+
+		ItemStack weapon = player.getItemInHand(hand);
+		if (weapon.getItem() != Items.SHEARS) return InteractionResult.PASS;
+
+		int now = this.tickCount;
+		if (now - this.lastCutTick < config.getHookCutCooldownTicks()) return InteractionResult.CONSUME;
+		this.lastCutTick = now;
+
+		this.cutCount++;
+		this.playSound(SoundEvents.SHEEP_SHEAR, 0.8f, 1.2f);
+		weapon.hurtAndBreak(5, player, LivingEntity.getSlotForHand(hand));
+
+		if (this.cutCount >= config.getHookCutsRequired()) {
+			this.detachFromContraption();
+		}
+		return InteractionResult.CONSUME;
 	}
 
 

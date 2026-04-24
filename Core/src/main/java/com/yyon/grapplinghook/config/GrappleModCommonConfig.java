@@ -64,7 +64,10 @@ public class GrappleModCommonConfig extends DefaultValueTracker implements IConf
                     new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.ropeJumpCooldown, (config, val) -> config.ropeJumpCooldown = val),
                     new FieldCodec<>(ByteBufCodecs.FLOAT, conf -> conf.climbSpeed, (config, val) -> config.climbSpeed = val),
                     new FieldCodec<>(ByteBufCodecs.FLOAT, conf -> conf.enderStaffStrength, (config, val) -> config.enderStaffStrength = val),
-                    new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.enderStaffCooldown, (config, val) -> config.enderStaffCooldown = val)
+                    new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.enderStaffCooldown, (config, val) -> config.enderStaffCooldown = val),
+                    new FieldCodec<>(ByteBufCodecs.BOOL, conf -> conf.enableHookCutting, (config, val) -> config.enableHookCutting = val),
+                    new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.hookCutsRequired, (config, val) -> config.hookCutsRequired = val),
+                    new FieldCodec<>(ByteBufCodecs.INT, conf -> conf.hookCutCooldownTicks, (config, val) -> config.hookCutCooldownTicks = val)
             )
     );
 
@@ -193,6 +196,25 @@ public class GrappleModCommonConfig extends DefaultValueTracker implements IConf
 
     public float getClimbSpeed() {
         return this.climbSpeed;
+    }
+
+    @SerialEntry @Category("item")
+    private boolean enableHookCutting = true;
+    @SerialEntry @Category("item") @DiscreteRange(min = 1, max = 10)
+    private int hookCutsRequired = 3;
+    @SerialEntry @Category("item") @DiscreteRange(min = 0, max = 200, formatTranslationKey = ConfigUtil.TYPE_TICKS)
+    private int hookCutCooldownTicks = 10;
+
+    public boolean isHookCuttingEnabled() {
+        return this.enableHookCutting;
+    }
+
+    public int getHookCutsRequired() {
+        return Math.max(1, this.hookCutsRequired);
+    }
+
+    public int getHookCutCooldownTicks() {
+        return Math.max(0, this.hookCutCooldownTicks);
     }
 
 
