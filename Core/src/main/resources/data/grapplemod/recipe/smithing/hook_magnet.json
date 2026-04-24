@@ -1,0 +1,9 @@
+{
+    "type": "grapplemod:hook_upgrade",
+
+    "template": { "item": "grapplemod:base_upgrade" },
+    "addition": { "item": "grapplemod:forcefield" },
+
+    "applies": [ "grapplemod:magnet", "grapplemod:forcefield" ],
+    "excludes_if_any": [ "grapplemod:motor" ]
+}

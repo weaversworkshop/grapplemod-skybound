@@ -1,0 +1,9 @@
+{
+    "type": "grapplemod:hook_upgrade",
+
+    "template": { "item": "grapplemod:base_upgrade" },
+    "addition": { "item": "minecraft:piston" },
+
+    "applies": [ "grapplemod:motor", "grapplemod:smart_motor" ],
+    "excludes_if_any": [ "grapplemod:magnet", "grapplemod:forcefield" ]
+}

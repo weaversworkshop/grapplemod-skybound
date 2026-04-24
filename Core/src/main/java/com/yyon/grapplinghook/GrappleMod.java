@@ -82,6 +82,7 @@ public class GrappleMod implements ModInitializer {
         ModEntities.registerAllEntities();
         ModBlockEntities.registerAllBlockEntities();
         ModAdvancementTriggers.registerAllTriggers();
+        ModRecipeSerializers.registerAll();
 
         CustomizationProperties.registerAll();
         CustomizationCategories.registerAll();

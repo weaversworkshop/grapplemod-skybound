@@ -2,8 +2,8 @@ package com.yyon.grapplinghook.content.registry.internal;
 
 import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.content.item.*;
+import com.yyon.grapplinghook.content.item.smithing.GrapplingHookUpgradeTemplateItem;
 import com.yyon.grapplinghook.content.item.smithing.LongFallBootsTemplateItem;
-import com.yyon.grapplinghook.content.item.upgrade.*;
 import com.yyon.grapplinghook.content.registry.helper.AbstractRegistryReference;
 import com.yyon.grapplinghook.content.registry.helper.TabBuilder;
 import com.yyon.grapplinghook.content.customization.HookTemplates;
@@ -35,18 +35,7 @@ public final class ModItems {
     public static final ItemEntry<ForcefieldItem> FORCE_FIELD = ModItems.item("forcefield", ForcefieldItem::new);
     public static final ItemEntry<RocketItem> ROCKET = ModItems.item("rocket", RocketItem::new);
 
-    public static final ItemEntry<BaseUpgradeItem> BASE_UPGRADE = ModItems.item("base_upgrade", BaseUpgradeItem::new);
-    public static final ItemEntry<DoubleUpgradeItem> DOUBLE_UPGRADE = ModItems.item("double_hook_upgrade", DoubleUpgradeItem::new);
-    public static final ItemEntry<ForcefieldUpgradeItem> FORCE_FIELD_UPGRADE = ModItems.item("forcefield_upgrade", ForcefieldUpgradeItem::new);
-    public static final ItemEntry<MagnetUpgradeItem> MAGNET_UPGRADE = ModItems.item("magnet_upgrade", MagnetUpgradeItem::new);
-    public static final ItemEntry<MotorUpgradeItem> MOTOR_UPGRADE = ModItems.item("motor_upgrade", MotorUpgradeItem::new);
-    public static final ItemEntry<RopeUpgradeItem> ROPE_UPGRADE = ModItems.item("rope_upgrade", RopeUpgradeItem::new);
-    public static final ItemEntry<StaffUpgradeItem> ENDER_STAFF_UPGRADE = ModItems.item("ender_staff_upgrade", StaffUpgradeItem::new);
-    public static final ItemEntry<SwingUpgradeItem> SWING_UPGRADE = ModItems.item("swing_upgrade", SwingUpgradeItem::new);
-    public static final ItemEntry<ThrowUpgradeItem> HOOK_THROWER_UPGRADE = ModItems.item("hook_thrower_upgrade", ThrowUpgradeItem::new);
-    public static final ItemEntry<LimitsUpgradeItem> LIMITS_UPGRADE = ModItems.item("limits_upgrade", LimitsUpgradeItem::new);
-    public static final ItemEntry<RocketUpgradeItem> ROCKET_UPGRADE = ModItems.item("rocket_upgrade", RocketUpgradeItem::new);
-    public static final ItemEntry<DyeBagUpgrade> DYE_BAG_UPGRADE = ModItems.item("dye_bag_upgrade", DyeBagUpgrade::new);
+    public static final ItemEntry<GrapplingHookUpgradeTemplateItem> BASE_UPGRADE = ModItems.item("base_upgrade", GrapplingHookUpgradeTemplateItem::new);
 
     public static final ItemEntry<LongFallBootsItem> LONG_FALL_BOOTS = ModItems.item("long_fall_boots", LongFallBootsItem::new);
     public static final ItemEntry<LongFallBootsTemplateItem> LONG_FALL_BOOTS_SMITHING_TEMPLATE = ModItems.item("long_fall_boots_smithing_template", LongFallBootsTemplateItem::new);

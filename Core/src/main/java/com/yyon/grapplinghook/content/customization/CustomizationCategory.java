@@ -1,7 +1,6 @@
 package com.yyon.grapplinghook.content.customization;
 
 import com.mojang.serialization.Codec;
-import com.yyon.grapplinghook.content.item.upgrade.BaseUpgradeItem;
 import com.yyon.grapplinghook.content.registry.GrappleModRegistries;
 import com.yyon.grapplinghook.content.customization.type.CustomizationProperty;
 import net.minecraft.ChatFormatting;
@@ -19,11 +18,9 @@ public class CustomizationCategory {
 
     public static final Codec<CustomizationCategory> KEY_CODEC = Codec.lazyInitialized(GrappleModRegistries.CUSTOMIZATION_CATEGORIES::byNameCodec);
 
-    private final BaseUpgradeItem upgradeItem;
     private final List<CustomizationProperty<?>> linkedProperties;
 
-    public CustomizationCategory(BaseUpgradeItem upgradeItem, CustomizationProperty<?>... unlocks) {
-        this.upgradeItem = upgradeItem;
+    public CustomizationCategory(CustomizationProperty<?>... unlocks) {
         this.linkedProperties = List.of(unlocks);
     }
 
@@ -46,10 +43,6 @@ public class CustomizationCategory {
 
     public ResourceLocation getIdentifier() {
         return GrappleModRegistries.CUSTOMIZATION_CATEGORIES.getKey(this);
-    }
-
-    public BaseUpgradeItem getUpgradeItem() {
-        return this.upgradeItem;
     }
 
     public MutableComponent getName() {

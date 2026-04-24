@@ -84,17 +84,6 @@
     "item.grapplemod.wallrunboots": "Wall-Running Boots",
 
     "item.grapplemod.base_upgrade": "Grappling Hook Upgrade Template",
-    "item.grapplemod.double_hook_upgrade": "Double Upgrade",
-    "item.grapplemod.forcefield_upgrade": "Forcefield Upgrade",
-    "item.grapplemod.motor_upgrade": "Motor Upgrade",
-    "item.grapplemod.magnet_upgrade": "Hook Magnet Upgrade",
-    "item.grapplemod.rope_upgrade": "Rope Upgrade",
-    "item.grapplemod.ender_staff_upgrade": "Ender Staff Upgrade",
-    "item.grapplemod.swing_upgrade": "Swing Upgrade",
-    "item.grapplemod.hook_thrower_upgrade": "Hook Thrower Upgrade",
-    "item.grapplemod.limits_upgrade": "Limits Upgrade",
-    "item.grapplemod.rocket_upgrade": "Rocket Upgrade",
-    "item.grapplemod.dye_bag_upgrade": "Dye Bag Upgrade",
     "item.grapplemod.long_fall_boots_smithing_template": "Smithing Template",
 
     "item.grapplemod.smithing_template.long_fall_boots.applies_to": "Diamond & Netherite Boots",
@@ -102,10 +91,16 @@
     "item.grapplemod.smithing_template.long_fall_boots.base_slot_description": "Add Diamond/Netherite Boots",
     "item.grapplemod.smithing_template.long_fall_boots.additions_slot_description": "Add Phantom Membrane",
 
+    "item.grapplemod.smithing_template.grappling_hook_upgrade.applies_to": "Grappling Hook",
+    "item.grapplemod.smithing_template.grappling_hook_upgrade.ingredients": "Piston, Forcefield, Ender Staff, Porta-Rocket, Grappling Hook",
+    "item.grapplemod.smithing_template.grappling_hook_upgrade.base_slot_description": "Add Grappling Hook",
+    "item.grapplemod.smithing_template.grappling_hook_upgrade.additions_slot_description": "Add Upgrade Item",
+
     "block.grapplemod.modification_table": "Grappling Hook Modifier",
     "block.grapplemod.blueprint_shelf": "Blueprint Shelf",
 
     "upgrade.grapplemod.long_fall_boots": "Long Fall Boots Upgrade",
+    "upgrade.grapplemod.grappling_hook_upgrade": "Grappling Hook Upgrade",
 
     "enchantment.grapplemod.wall_running": "Wall-Running",
     "enchantment.grapplemod.double_jump": "Double-Jump",

@@ -1,0 +1,9 @@
+{
+    "type": "grapplemod:hook_upgrade",
+
+    "template": { "item": "grapplemod:base_upgrade" },
+    "addition": { "item": "grapplemod:ender_staff" },
+
+    "applies": [ "grapplemod:ender_staff" ],
+    "excludes_if_any": [ "grapplemod:rocket" ]
+}
