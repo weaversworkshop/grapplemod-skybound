@@ -48,7 +48,7 @@ final class HookFlightController {
             boolean[] crossedRef = { false };
             boolean isServer = !hook.level().isClientSide;
 
-            sli.forEachTrackedSubLevel((uuid, aabb) -> {
+            sli.forEachTrackedSubLevelSwept((uuid, aabb) -> {
                 if (!aabb.clip(rayStart, rayEnd).isPresent()) return;
                 crossedRef[0] = true;
                 if (!isServer) return;

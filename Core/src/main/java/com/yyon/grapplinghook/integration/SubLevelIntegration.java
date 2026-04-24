@@ -41,4 +41,8 @@ public interface SubLevelIntegration {
     boolean anyTrackedSubLevelOverlaps(AABB probe);
 
     default void forEachTrackedSubLevel(BiConsumer<UUID, AABB> visitor) {}
+
+    default void forEachTrackedSubLevelSwept(BiConsumer<UUID, AABB> visitor) {
+        forEachTrackedSubLevel(visitor);
+    }
 }

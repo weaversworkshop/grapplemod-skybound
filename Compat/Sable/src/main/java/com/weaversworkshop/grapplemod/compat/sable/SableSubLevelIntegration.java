@@ -33,13 +33,34 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
 
     private final Map<UUID, Tracked> tracked = new ConcurrentHashMap<>();
 
-    private record Tracked(SubLevel subLevel, Level level) {}
+    private static final class Tracked {
+        final SubLevel subLevel;
+        final Level level;
+        volatile @Nullable Pose3dc prevPose;
+        volatile @Nullable BoundingBox3dc prevBounds;
+
+        Tracked(SubLevel subLevel, Level level) {
+            this.subLevel = subLevel;
+            this.level = level;
+        }
+    }
 
     void trackSubLevel(UUID id, SubLevel subLevel, Level level) {
-        Tracked prior = tracked.put(id, new Tracked(subLevel, level));
-        if (prior == null) {
+        Tracked existing = tracked.get(id);
+        if (existing != null && existing.subLevel == subLevel) return;
+        tracked.put(id, new Tracked(subLevel, level));
+        if (existing == null) {
             LOGGER.info("[Grapple <-> Sable] NEW sub-level tracked: uuid={} level.isClient={} pose.pos={}",
                     id, level.isClientSide, subLevel.logicalPose().position());
+        }
+    }
+
+    public void snapshotPoses(Level level) {
+        for (Tracked t : tracked.values()) {
+            if (t.level != level) continue;
+            if (t.subLevel.isRemoved()) continue;
+            t.prevPose = t.subLevel.logicalPose();
+            t.prevBounds = t.subLevel.boundingBox();
         }
     }
 
@@ -147,14 +168,15 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
         Tracked t = tracked.get(subLevelId);
         if (t == null) return null;
 
-        Pose3dc pose = t.subLevel.logicalPose();
-        Vec3 plotStart = pose.transformPositionInverse(rayStart);
-        Vec3 plotEnd = pose.transformPositionInverse(rayEnd);
+        Pose3dc currentPose = t.subLevel.logicalPose();
+        Pose3dc startPose = t.prevPose != null ? t.prevPose : currentPose;
+        Vec3 plotStart = startPose.transformPositionInverse(rayStart);
+        Vec3 plotEnd = currentPose.transformPositionInverse(rayEnd);
 
         VoxelHit hit = voxelTraverseDetailed(t.subLevel, plotStart, plotEnd);
         if (hit == null) return null;
 
-        Vec3 worldHit = pose.transformPosition(hit.plotHit);
+        Vec3 worldHit = currentPose.transformPosition(hit.plotHit);
         return new SubLevelRaycastHit(worldHit, hit.face, hit.plotHit, hit.pos);
     }
 
@@ -520,6 +542,24 @@ public class SableSubLevelIntegration implements SubLevelIntegration {
             if (bb == null) continue;
             AABB box = new AABB(bb.minX(), bb.minY(), bb.minZ(), bb.maxX(), bb.maxY(), bb.maxZ());
             visitor.accept(entry.getKey(), box);
+        }
+    }
+
+    @Override
+    public void forEachTrackedSubLevelSwept(BiConsumer<UUID, AABB> visitor) {
+        for (Map.Entry<UUID, Tracked> entry : tracked.entrySet()) {
+            Tracked t = entry.getValue();
+            if (t.subLevel.isRemoved()) continue;
+            BoundingBox3dc bb = t.subLevel.boundingBox();
+            if (bb == null) continue;
+            double minX = bb.minX(), minY = bb.minY(), minZ = bb.minZ();
+            double maxX = bb.maxX(), maxY = bb.maxY(), maxZ = bb.maxZ();
+            BoundingBox3dc prev = t.prevBounds;
+            if (prev != null) {
+                minX = Math.min(minX, prev.minX()); minY = Math.min(minY, prev.minY()); minZ = Math.min(minZ, prev.minZ());
+                maxX = Math.max(maxX, prev.maxX()); maxY = Math.max(maxY, prev.maxY()); maxZ = Math.max(maxZ, prev.maxZ());
+            }
+            visitor.accept(entry.getKey(), new AABB(minX, minY, minZ, maxX, maxY, maxZ));
         }
     }
 

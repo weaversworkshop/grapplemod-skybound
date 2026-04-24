@@ -57,6 +57,15 @@ public class SableCompatModule {
         // and diff the UUID set to synthesize assemble/disassemble events. Cheap: the
         // set is per-level and typically tiny (one entry per active ship/vehicle).
         ServerTickEvents.END_WORLD_TICK.register(this::onLevelTickEnd);
+        ServerTickEvents.START_WORLD_TICK.register(this::onLevelTickStart);
+    }
+
+    private void onLevelTickStart(ServerLevel level) {
+        try {
+            this.integration.snapshotPoses(level);
+        } catch (Throwable err) {
+            LOGGER.error("[Grapple <-> Sable] snapshotPoses threw", err);
+        }
     }
 
     private void onLevelTickEnd(ServerLevel level) {
