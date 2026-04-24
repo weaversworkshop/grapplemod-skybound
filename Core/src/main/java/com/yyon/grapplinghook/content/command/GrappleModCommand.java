@@ -1,11 +1,8 @@
 package com.yyon.grapplinghook.content.command;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.yyon.grapplinghook.content.registry.internal.ModEnchantments;
-import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.player.Player;
 
 import static com.mojang.brigadier.builder.LiteralArgumentBuilder.literal;

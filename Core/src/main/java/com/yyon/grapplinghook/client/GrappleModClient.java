@@ -1,14 +1,12 @@
 package com.yyon.grapplinghook.client;
 
 import com.yyon.grapplinghook.GrappleMod;
-import com.yyon.grapplinghook.client.gui.screen.LegacyGrappleModifierBlockScreen;
 import com.yyon.grapplinghook.client.network.ClientNetworkReceivers;
 import com.yyon.grapplinghook.client.physics.ClientPhysicsControllerTracker;
 import com.yyon.grapplinghook.client.physics.controller.AirFrictionPhysicsController;
 import com.yyon.grapplinghook.client.physics.controller.ForcefieldPhysicsController;
 import com.yyon.grapplinghook.client.render.entity.GrapplinghookEntityRenderer;
 import com.yyon.grapplinghook.config.GrappleModClientConfig;
-import com.yyon.grapplinghook.content.blockentity.GrappleModifierBlockEntity;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
 import com.yyon.grapplinghook.content.registry.internal.ModEntities;
 import com.yyon.grapplinghook.content.registry.internal.ModEntityLayerIdentifiers;
@@ -17,7 +15,6 @@ import com.yyon.grapplinghook.content.customization.data.HookCustomization;
 import com.yyon.grapplinghook.content.customization.type.BooleanProperty;
 import com.yyon.grapplinghook.content.registry.internal.ModMenuScreens;
 import com.yyon.grapplinghook.util.GrappleModUtils;
-import com.yyon.grapplinghook.util.Vec;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -37,7 +34,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -51,10 +47,6 @@ import static com.yyon.grapplinghook.content.registry.CustomizationProperties.*;
 public class GrappleModClient implements ClientModInitializer {
 
     private static GrappleModClient clientInstance;
-
-
-    private static final ResourceLocation SOUND_DOUBLE_JUMP = GrappleMod.id("doublejump");
-    private static final ResourceLocation SOUND_SLIDE = GrappleMod.id("slide");
 
     private ClientPhysicsControllerTracker clientPhysicsControllerTracker;
 
@@ -89,8 +81,6 @@ public class GrappleModClient implements ClientModInitializer {
     public void initConfig() {
         GrappleModClientConfig.HANDLER.defaults().saveDefaults();
         GrappleModClientConfig.HANDLER.load();
-
-        //todo: reload creative tabs on save / load.
     }
 
     public void registerPropertyOverride() {
@@ -109,7 +99,6 @@ public class GrappleModClient implements ClientModInitializer {
             return (this.getClientControllerManager().controllers.containsKey(entity.getId()) && this.getClientControllerManager().controllers.get(entity.getId()) instanceof ForcefieldPhysicsController) ? 1 : 0;
         });
         ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("hook"), (stack, world, entity, seed) -> ModItems.GRAPPLING_HOOK.get().shouldDisplayAsHookOnly(stack) ? 1 : 0);
-        ItemProperties.register(ModItems.BLUEPRINT.get(), GrappleMod.id("written"), (stack, world, entity, seed) -> ModItems.BLUEPRINT.get().isBlank(stack) ? 0 : 1);
     }
 
     public void registerResourcePacks() {
@@ -130,18 +119,6 @@ public class GrappleModClient implements ClientModInitializer {
         this.getClientControllerManager().startRocket(player, custom);
     }
 
-    public void playSlideSound() {
-        this.playSound(GrappleModClient.SOUND_SLIDE, GrappleModClientConfig.get().getSlideVolume());
-    }
-
-    public void playDoubleJumpSound() {
-        this.playSound(GrappleModClient.SOUND_DOUBLE_JUMP, GrappleModClientConfig.get().getDoubleJumpVolume() * 0.7F);
-    }
-
-    public void playWallrunJumpSound() {
-        this.playSound(GrappleModClient.SOUND_DOUBLE_JUMP, GrappleModClientConfig.get().getWallrunJumpVolume() * 0.7F);
-    }
-
     public void resetLauncherTime(int playerId) {
         this.getClientControllerManager().resetLauncherTime(playerId);
     }
@@ -156,14 +133,6 @@ public class GrappleModClient implements ClientModInitializer {
 
     public double getRocketFunctioning() {
         return this.getClientControllerManager().getRocketFunctioning();
-    }
-
-    public boolean isWallRunning(LivingEntity entity, Vec motion) {
-        return this.getClientControllerManager().isWallRunning(entity, motion);
-    }
-
-    public boolean isSliding(LivingEntity entity, Vec motion) {
-        return this.getClientControllerManager().isSliding(entity, motion);
     }
 
     public long getTimeSinceLastRopeJump(Level world) {
@@ -197,14 +166,6 @@ public class GrappleModClient implements ClientModInitializer {
         Minecraft.getInstance()
                 .getSoundManager()
                 .play(sound);
-    }
-
-    public int getWallrunTicks() {
-        return this.getClientControllerManager().ticksWallRunning;
-    }
-
-    public void setWallrunTicks(int newWallrunTicks) {
-        this.getClientControllerManager().ticksWallRunning = newWallrunTicks;
     }
 
     private static int propertyEquipOverride(ItemStack stack, BooleanProperty property) {

@@ -16,7 +16,6 @@ import com.yyon.grapplinghook.network.serverbound.HaltCustomPhysicsC2SPayload;
 import com.yyon.grapplinghook.network.serverbound.PhysicsUpdateC2SPayload;
 import com.yyon.grapplinghook.network.serverbound.PlayerMovementC2SPayload;
 import com.yyon.grapplinghook.physics.PlayerPhysicsFrame;
-import com.yyon.grapplinghook.util.EnchantmentValues;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
 import net.minecraft.client.Minecraft;
@@ -32,9 +31,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.SoundType;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.HashSet;
@@ -76,8 +72,6 @@ public class GrapplingHookPhysicsController {
 
 private boolean rocketKeyDown = false;
 	private double rocketProgression;
-
-	final WallRunBehavior wallrun = new WallRunBehavior(this);
 
 	HookCustomization custom;
 	
@@ -768,34 +762,6 @@ public void receiveGrappleDetachHook(int hookid) {
 		return force;
 	}
 
-	public void doDoubleJump() {
-		if (EnchantmentValues.LIMIT_DOUBLE_JUMP_AT_FALL_SPEED_LIMIT && -this.motion.y > EnchantmentValues.DOUBLE_JUMP_FALL_SPEED_LIMIT) {
-			return;
-		}
-
-		if (this.motion.y < 0 && !EnchantmentValues.DOUBLE_JUMP_RELATIVE_TO_FALL_SPEED) {
-			this.motion.y = 0;
-		}
-
-		this.motion.y += EnchantmentValues.DOUBLE_JUMP_FORCE;
-		this.motion.applyAsMotionTo(this.holder);
-		this.holder.resetFallDistance();
-	}
-	
-	public void applySlidingFriction() {
-		double dragForce = EnchantmentValues.SLIDE_FRICTION;
-		
-		if (dragForce > this.motion.length()) {dragForce = this.motion.length(); }
-		
-		Vec airFriction = new Vec(this.motion.x, this.motion.y, this.motion.z);
-		airFriction.mutableSetMagnitude(-dragForce);
-		this.motion.mutableAdd(airFriction);
-	}
-
-	public void doSlidingJump() {
-		this.motion.y = EnchantmentValues.SLIDE_JUMP_FORCE;
-	}
-
 	public void resetRocketProgression() {
 		this.rocketKeyDown = true;
 		this.rocketProgression = 1.0F;
@@ -815,10 +781,6 @@ public void receiveGrappleDetachHook(int hookid) {
 
 	public boolean isRocketKeyDown() {
 		return this.rocketKeyDown;
-	}
-
-	public Vec getWallDirection() {
-		return this.wallrun.getWallDirection();
 	}
 
 	public boolean isControllerActive() {

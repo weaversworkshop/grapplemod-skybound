@@ -29,7 +29,6 @@ public class NetworkManager {
         registerC2SPacket(PlayerMovementC2SPayload.PAYLOAD_TYPE, PlayerMovementC2SPayload.STREAM_CODEC);
         registerC2SPacket(PhysicsUpdateC2SPayload.PAYLOAD_TYPE, PhysicsUpdateC2SPayload.STREAM_CODEC);
         registerC2SPacket(KeypressC2SPayload.PAYLOAD_TYPE, KeypressC2SPayload.STREAM_CODEC);
-        registerC2SPacket(SyncModifierTableC2SPayload.PAYLOAD_TYPE,  SyncModifierTableC2SPayload.STREAM_CODEC);
         registerC2SPacket(HaltCustomPhysicsC2SPayload.PAYLOAD_TYPE,  HaltCustomPhysicsC2SPayload.STREAM_CODEC);
 
         registerS2CPacket(AddExtraEntityDataS2CPayload.PAYLOAD_TYPE, AddExtraEntityDataS2CPayload.STREAM_CODEC);

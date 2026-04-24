@@ -1,8 +1,6 @@
 package com.yyon.grapplinghook.content.registry.internal;
 
 import com.yyon.grapplinghook.GrappleMod;
-import com.yyon.grapplinghook.content.blockentity.BlueprintShelfBlockEntity;
-import com.yyon.grapplinghook.content.blockentity.GrappleModifierBlockEntity;
 import com.yyon.grapplinghook.content.registry.helper.AbstractRegistryReference;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -20,18 +18,6 @@ public class ModBlockEntities {
     static {
         blockEntities = new HashMap<>();
     }
-
-    public static final BlockEntityEntry<BlockEntityType<GrappleModifierBlockEntity>> GRAPPLE_MODIFIER = ModBlockEntities
-            .blockEntity("modification_table",() -> BlockEntityType.Builder
-                    .of(GrappleModifierBlockEntity::new, ModBlocks.GRAPPLE_MODIFIER.get())
-                    .build(null));
-
-    public static final BlockEntityEntry<BlockEntityType<BlueprintShelfBlockEntity>> BLUEPRINT_SHELF = ModBlockEntities
-            .blockEntity("blueprint_shelf",() -> BlockEntityType.Builder
-                    .of(BlueprintShelfBlockEntity::new, ModBlocks.BLUEPRINT_SHELF.get())
-                    .build(null));
-
-
 
     public static <E extends BlockEntityType<?>> BlockEntityEntry<E> blockEntity(String id, Supplier<E> type) {
         ResourceLocation qualId = GrappleMod.id(id);
@@ -60,5 +46,3 @@ public class ModBlockEntities {
     }
 
 }
-
-

@@ -62,33 +62,9 @@ public class GrappleModClientConfig extends DefaultValueTracker implements IConf
 
     @InlineSubCategory("volume")
     @SerialEntry @Category("sound") @ContinuousRange(min = 0, max = 100, sliderStep = 1f, formatTranslationKey = ConfigUtil.TYPE_PERCENTAGE)
-    private float wallrunVolume = 100.0f;
-    @SerialEntry @Category("sound") @ContinuousRange(min = 0, max = 100, sliderStep = 1f, formatTranslationKey = ConfigUtil.TYPE_PERCENTAGE)
-    private float wallrunJumpVolume = 100.0f;
-    @SerialEntry @Category("sound") @ContinuousRange(min = 0, max = 100, sliderStep = 1f, formatTranslationKey = ConfigUtil.TYPE_PERCENTAGE)
-    private float doubleJumpVolume = 100.0f;
-    @SerialEntry @Category("sound") @ContinuousRange(min = 0, max = 100, sliderStep = 1f, formatTranslationKey = ConfigUtil.TYPE_PERCENTAGE)
-    private float slideVolume = 100.0f;
-    @SerialEntry @Category("sound") @ContinuousRange(min = 0, max = 100, sliderStep = 1f, formatTranslationKey = ConfigUtil.TYPE_PERCENTAGE)
     private float rocketVolume = 100.0f;
     @SerialEntry @Category("sound") @ContinuousRange(min = 0, max = 100, sliderStep = 1f, formatTranslationKey = ConfigUtil.TYPE_PERCENTAGE)
     private float enderstaffVolume = 100f;
-
-    public float getWallrunVolume() {
-        return this.wallrunVolume / 100.0f;
-    }
-
-    public float getWallrunJumpVolume() {
-        return this.wallrunJumpVolume / 100.0f;
-    }
-
-    public float getDoubleJumpVolume() {
-        return this.doubleJumpVolume / 100.0f;
-    }
-
-    public float getSlideVolume() {
-        return this.slideVolume / 100.0f;
-    }
 
     public float getRocketVolume() {
         return this.rocketVolume / 100.0f;
@@ -96,20 +72,6 @@ public class GrappleModClientConfig extends DefaultValueTracker implements IConf
 
     public float getEnderstaffVolume() {
         return this.enderstaffVolume / 100.0f;
-    }
-
-
-    @SerialEntry @Category("camera") @ContinuousRange(min = 0, max = 90, sliderStep = 0.5f, formatTranslationKey = ConfigUtil.TYPE_DEGREES)
-    private float wallrunTilt = 10.0f;
-    @SerialEntry @Category("camera") @ContinuousRange(min = 0, max = 2, sliderStep = 0.05f, formatTranslationKey = ConfigUtil.TYPE_SECONDS)
-    private float wallrunAnimationSeconds = 0.5f;
-
-    public float getWallrunTilt() {
-        return this.wallrunTilt;
-    }
-
-    public float getWallrunAnimationSeconds() {
-        return this.wallrunAnimationSeconds;
     }
 
 }

@@ -6,7 +6,6 @@
   "mixins": [
     "BasePlayerDamageHandlerMixin",
     "ServerBlockBreakDetectorMixin",
-    "CreativeTabForceUpdateMixin",
     "LivingEntityDamageHandlerMixin",
     "PlayerDropHandlerMixin",
     "PlayerJoinMixin",
@@ -16,11 +15,9 @@
   ],
   "client": [
     "client.ClientBlockBreakDetectorMixin",
-    "client.CameraSetupHookMixin",
     "client.ClientHookMixin",
     "client.DebugMenuMixin",
     "client.GrappleCrosshairMixin",
-    "client.KeybindingHandlerMixin",
     "client.LocalPlayerUpdatesMixin",
     "client.MovementInputHandlerMixin",
     "client.attachable.ArmorStandAttachablesMixin",

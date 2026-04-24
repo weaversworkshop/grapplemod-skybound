@@ -34,7 +34,6 @@ public class ModKeys {
     public static final WithFallback CLIMB = ModKeys.createKeyBindingWithFallback(new KeyMapping("key.climb.desc", GLFW.GLFW_KEY_UNKNOWN, "key.grapplemod.category"), options -> options.keyShift);
     public static final WithFallback HOOK_ENDER_LAUNCH = ModKeys.createKeyBindingWithFallback(new KeyMapping("key.enderlaunch.desc", GLFW.GLFW_KEY_UNKNOWN, "key.grapplemod.category"), options -> options.keyAttack);
     public static final WithFallback ROCKET = ModKeys.createKeyBindingWithFallback(new KeyMapping("key.rocket.desc", GLFW.GLFW_KEY_UNKNOWN, "key.grapplemod.category"), options -> options.keyAttack);
-    public static final WithFallback SLIDE = ModKeys.createKeyBindingWithFallback(new KeyMapping("key.slide.desc", GLFW.GLFW_KEY_UNKNOWN, "key.grapplemod.category"), options -> options.keyShift);
 
     public static final KeyMapping THROW_OFF_HOOK = ModKeys.createKeyBinding(new KeyMapping("key.off_throw.desc", InputConstants.UNKNOWN.getValue(), "key.grapplemod.category"));
     public static final KeyMapping THROW_MAIN_HOOK = ModKeys.createKeyBinding(new KeyMapping("key.main_throw.desc", InputConstants.UNKNOWN.getValue(), "key.grapplemod.category"));

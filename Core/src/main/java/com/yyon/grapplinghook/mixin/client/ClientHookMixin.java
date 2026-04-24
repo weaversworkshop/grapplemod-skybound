@@ -5,16 +5,11 @@ import com.yyon.grapplinghook.client.ModKeys;
 import com.yyon.grapplinghook.client.physics.ClientPhysicsControllerTracker;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.content.item.type.IGlobalKeyObserver;
-import com.yyon.grapplinghook.content.registry.internal.ModBlocks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -58,12 +53,10 @@ public class ClientHookMixin {
 
                 ItemStack stack = this.getKeypressStack(player);
                 if (stack != null) {
-                    if (!this.isLookingAtModifierBlock(player)) {
-                        if (isKeyDown) {
-                            ((IGlobalKeyObserver) stack.getItem()).onCustomKeyDown(stack, player, key, true);
-                        } else {
-                            ((IGlobalKeyObserver) stack.getItem()).onCustomKeyUp(stack, player, key, true);
-                        }
+                    if (isKeyDown) {
+                        ((IGlobalKeyObserver) stack.getItem()).onCustomKeyDown(stack, player, key, true);
+                    } else {
+                        ((IGlobalKeyObserver) stack.getItem()).onCustomKeyUp(stack, player, key, true);
                     }
                 }
             }
@@ -92,18 +85,5 @@ public class ClientHookMixin {
         if (stack.getItem() instanceof IGlobalKeyObserver) return stack;
 
         return null;
-    }
-
-    @Unique
-    private boolean isLookingAtModifierBlock(Player player) {
-        HitResult result = Minecraft.getInstance().hitResult;
-        if (result != null && result.getType() == HitResult.Type.BLOCK) {
-            BlockHitResult bray = (BlockHitResult) result;
-            BlockPos pos = bray.getBlockPos();
-            BlockState state = player.level().getBlockState(pos);
-
-            return (state.getBlock() == ModBlocks.GRAPPLE_MODIFIER.get());
-        }
-        return false;
     }
 }

@@ -76,7 +76,6 @@ public class GrappleMod implements ModInitializer {
         ModDataComponents.bump();
 
         ModArmourMaterials.registerAllMaterials();
-        ModEnchantments.registerImmutable();
 
         ModBlocks.registerAllBlocks();
         ModItems.registerAllItems();
@@ -86,8 +85,6 @@ public class GrappleMod implements ModInitializer {
 
         CustomizationProperties.registerAll();
         CustomizationCategories.registerAll();
-
-        ModEnchantments.registerRuntime();
 
         ModMenus.bump();
         ModTags.bump();
@@ -137,7 +134,6 @@ public class GrappleMod implements ModInitializer {
 
         ModContainer container = cont.get();
         GrappleModUtils.registerPack("simplified", Component.translatable("pack.grapplemod.simplified"), container, ResourcePackActivationType.NORMAL);
-        GrappleModUtils.registerPack("no_enchants", Component.translatable("pack.grapplemod.no_enchants"), container, ResourcePackActivationType.NORMAL);
         GrappleModUtils.registerPack("classic_recipes", Component.translatable("pack.grapplemod.classic_recipes"), container, ResourcePackActivationType.NORMAL);
 
         GrappleMod.LOGGER.info("All done with datapacks!");

@@ -1,8 +1,6 @@
 package com.yyon.grapplinghook.content.registry.internal;
 
 import com.yyon.grapplinghook.GrappleMod;
-import com.yyon.grapplinghook.content.block.BlueprintShelfBlock;
-import com.yyon.grapplinghook.content.block.GrappleModifierBlock;
 import com.yyon.grapplinghook.content.registry.helper.AbstractRegistryReference;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -46,17 +44,6 @@ public class ModBlocks {
     public static Map<ResourceLocation, BlockEntry<?>> getBlocks() {
         return Collections.unmodifiableMap(blocks);
     }
-
-    public static final BlockEntry<GrappleModifierBlock> GRAPPLE_MODIFIER = ModBlocks
-            .block("modification_table", GrappleModifierBlock::new)
-            .withConfiguredItem(ModItems.GRAPPLE_MODIFIER_BLOCK, new Item.Properties().stacksTo(64))
-            .define();
-
-    public static final BlockEntry<BlueprintShelfBlock> BLUEPRINT_SHELF = ModBlocks
-            .block("blueprint_shelf", BlueprintShelfBlock::new)
-            .withConfiguredItem(ModItems.BLUEPRINT_SHELF_BLOCK, new Item.Properties().stacksTo(64))
-            .define();
-
 
 
     public static class Flow<B extends Block> {

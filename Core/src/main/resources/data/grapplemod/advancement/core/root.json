@@ -13,7 +13,6 @@
         "recipes": [
             "grapplemod:grappling_hook",
             "grapplemod:base_upgrade_item",
-            "grapplemod:modification_table",
             "grapplemod:ender_staff",
             "grapplemod:rocket",
             "grapplemod:forcefield",
