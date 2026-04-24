@@ -94,11 +94,8 @@ public class CustomizationProperties {
     public static final Entry<BooleanProperty> DETACH_HOOK_ON_KEY_UP =
             property("detach_hook_on_key_up", () -> new BooleanProperty(false));
 
-    public static final Entry<AttachmentProperty> SMART_MOTOR =
-            property("smart_motor", () -> new AttachmentProperty(false));
-
     public static final Entry<AttachmentProperty> MOTOR_ATTACHED =
-            property("motor", () -> new AttachmentProperty(false, SMART_MOTOR.get()));
+            property("motor", () -> new AttachmentProperty(false));
 
     public static final Entry<DoubleProperty> MOTOR_ACCELERATION =
             property("motor_acceleration", () -> new DoubleProperty(0.2D, 0.0D, 0.2D));

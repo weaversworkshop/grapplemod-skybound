@@ -58,16 +58,6 @@ public class HookTemplates {
             property(MOVE_SPEED_MULTIPLIER, 2.0d)
     ));
 
-    public static final Template SMART_HOOK = registerDefault(new Template(
-            "smart_hook", Component.translatable("hook_template.grapplemod.smart_hook"), INTERNAL_AUTHOR,
-            property(HOOK_THROW_SPEED, 3.5d),
-            property(MAX_ROPE_LENGTH, 60.0d),
-
-            property(MOTOR_ATTACHED, true),
-            property(SMART_MOTOR, true),
-            property(MOVE_SPEED_MULTIPLIER, 2.0d)
-    ));
-
     public static final Template MAGNET_HOOK = registerDefault(new Template(
             "magnet_hook", Component.translatable("hook_template.grapplemod.magnet_hook"), INTERNAL_AUTHOR,
             property(HOOK_THROW_SPEED, 3.5d),

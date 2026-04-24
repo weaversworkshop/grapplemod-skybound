@@ -1,6 +1,5 @@
 {
     "itemGroup.grapplemod.main": "Grappling Hook Mod",
-    "grapplemod.jei_modifier_text": "Add upgrade(s), open\ninterface to customize,\nthen apply to hook",
 
     "pack.grapplemod.original": "Classic Textures",
     "pack.grapplemod.simplified": "Just the Hook please!",
@@ -63,15 +62,7 @@
     "grapple_tooltip.controls.hint": "(Hold Shift to see controls)",
     "grapple_tooltip.configuration.hint": "(Hold Control to see full configuration)",
 
-    "tooltip.blueprint.unused_hint": "To be used at a Grappling Hook Modification Station",
-    "tooltip.blueprint.no_customizations": "Empty Blueprint!",
 
-    "feedback.grapplemod.modifier.long_fall_boots": "Retrofitted your boots into Aperture Science Grade Long-Fall Boots™",
-    "feedback.grapplemod.modifier.long_fall_boots.disabled": "You are not permitted to make Long Fall Boots at a modification table. Use a smithing table with an Long Fall Boots upgrade template!",
-    "feedback.grapplemod.modifier.upgrade_already_applied": "This workbench already has that upgrade applied!",
-    "feedback.grapplemod.modifier.applied_new_upgrade": "Applied upgrade:",
-    "feedback.grapplemod.modifier.applied_configuration": "Applied modifier tweaks to your Grappling Hook! ⛏",
-    "feedback.grapplemod.modifier.applied_blueprint": "Drew up a new blueprint with the modifier tweaks! ⛏",
 
     "item.grapplemod.grappling_hook": "Grappling Hook",
     "item.grapplemod.blueprint": "Blueprint",
@@ -96,9 +87,6 @@
     "item.grapplemod.smithing_template.grappling_hook_upgrade.base_slot_description": "Add Grappling Hook",
     "item.grapplemod.smithing_template.grappling_hook_upgrade.additions_slot_description": "Add Upgrade Item",
 
-    "block.grapplemod.modification_table": "Grappling Hook Modifier",
-    "block.grapplemod.blueprint_shelf": "Blueprint Shelf",
-
     "upgrade.grapplemod.long_fall_boots": "Long Fall Boots Upgrade",
     "upgrade.grapplemod.grappling_hook_upgrade": "Grappling Hook Upgrade",
 
@@ -110,27 +98,12 @@
     "hook_template.grapplemod.magnet_hook": "Magnetic Grappling Hook",
     "hook_template.grapplemod.motor_hook": "Motorized Grappling Hook",
     "hook_template.grapplemod.double_motor_hook": "Dual Motorized Grappling Hooks",
-    "hook_template.grapplemod.smart_hook": "Smart Motorized Grappling Hook",
     "hook_template.grapplemod.rocket_hook": "Rocket Grappling Hook",
     "hook_template.grapplemod.double_rocket_motor_hook": "Dual Motorized Rocket Grappling Hooks",
-
-    "blueprint_shelf.title.default": "Blueprint Shelf",
-
-    "grapple_modifier.title": "Grapple Hook Modifier Table",
-    "grapple_modifier.close_button": "Close",
-    "grapple_modifier.reset_button": "Reset",
-    "grapple_modifier.overview.title": "Categories:",
-    "grapple_modifier.notice.reset_customizations": "All customizations have been reset!",
-    "grapple_modifier.notice.saved_customizations": "Saved customizations!",
-    "grapple_modifier.category_unlock.title": "Category not unlocked: %s!",
-    "grapple_modifier.category_unlock.desc": "Please right click this block with the right upgrade item to unlock it.",
-    "grapple_modifier.help.title": "Grappling Hook Tips!",
-    "grapple_modifier.help.desc": " - Right-Click the block with a Grappling Hook to apply.\n\n - Use a Long Fall Boots Upgrade Template at a smithing table.\n\n - Hooks can be repaired with leather or the mending enchantment.\n\n - Hold Shift when viewing item tooltip for controls",
 
     "grapple_property.invalid": "Invalid Property",
     "grapple_property.invalid.desc": "Extension incorrectly configured.",
     "grapple_property.incompatible": "Incompatible with other properties!",
-    "grapple_property.limits_restricted": "Use the Limits Upgrade to unlock",
     "grapple_property.blocked": "Blocked by the server",
 
     "enum.grapplemod.crouch_activation.when_crouching": "When Sneaking",
@@ -158,7 +131,6 @@
     "grapple_property.grapplemod.motor_acceleration": "Motor Acceleration",
     "grapple_property.grapplemod.max_motor_speed": "Motor Maximum Speed",
     "grapple_property.grapplemod.motor_activation": "Motor Activation Type",
-    "grapple_property.grapplemod.smart_motor": "Smart Motor",
     "grapple_property.grapplemod.motor_dampener": "Sideways Motion Dampener",
     "grapple_property.grapplemod.motor_works_backwards": "Allow Backwards Pulling",
 
@@ -204,7 +176,6 @@
     "grapple_property.grapplemod.motor_acceleration.desc": "Acceleration of motor",
     "grapple_property.grapplemod.max_motor_speed.desc": "Maximum speed of motor",
     "grapple_property.grapplemod.motor_activation.desc": "Motor is active when this condition is met",
-    "grapple_property.grapplemod.smart_motor.desc": "Adjusts motor speed so that player moves towards crosshairs (vertical)",
     "grapple_property.grapplemod.motor_dampener.desc": "Reduces motion perpendicular to the rope so that the rope pulls straighter",
     "grapple_property.grapplemod.motor_works_backwards.desc": "Motor pulls even if you are facing the other way",
 
@@ -267,10 +238,6 @@
 
     "advancement.grapplemod.core.root.title": "Grappling Hook!",
     "advancement.grapplemod.core.root.description": "Hey Mabel, could you get the light?",
-    "advancement.grapplemod.core.upgrade_table.title": "Upgrades People, Upgrades!",
-    "advancement.grapplemod.core.upgrade_table.description": "Use a Grappling Hook Modification Station.",
-    "advancement.grapplemod.core.blueprint_on_upgrade_table.title": "The Tinkerer",
-    "advancement.grapplemod.core.blueprint_on_upgrade_table.description": "Copy your customizations from a Modification Table to Blueprint.",
     "advancement.grapplemod.core.long_fall_boots.title": "Thinking With Fall Damage",
     "advancement.grapplemod.core.long_fall_boots.description": "Craft a pair of Aperture Science™ Long Fall Boots at a Smithing Table",
     "advancement.grapplemod.core.long_fall_boots_big_fall.title": "Good Work, Boots!",
@@ -279,10 +246,6 @@
     "advancement.grapplemod.core.rocket_forcefield_combo.description": "Activate a rocket while using a Forcefield Generator",
     "advancement.grapplemod.core.speedy_forcefield.title": "Floating With Purpose",
     "advancement.grapplemod.core.speedy_forcefield.description": "Reach over 500 km/h while using the Forcefield Generator.",
-    "advancement.grapplemod.core.upgrade_table_complete.title": "Fully Upgraded!",
-    "advancement.grapplemod.core.upgrade_table_complete.description": "Use a Grappling Hook Modification Station with all upgrades unlocked!",
-    "advancement.grapplemod.core.upgrade_acquired.title": "Clutter is the spice of life",
-    "advancement.grapplemod.core.upgrade_acquired.description": "Craft a grappling hook upgrade!",
 
     "grapple_template.author.default": "GrappleMod",
     "grapple_template.author.unknown": "Unknown",

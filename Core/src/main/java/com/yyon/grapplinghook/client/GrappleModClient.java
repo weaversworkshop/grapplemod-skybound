@@ -87,7 +87,6 @@ public class GrappleModClient implements ClientModInitializer {
         ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("rocket"), (stack, world, entity, seed) -> propertyEquipOverride(stack, ROCKET_ATTACHED.get()));
         ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("double"), (stack, world, entity, seed) -> propertyEquipOverride(stack, DOUBLE_HOOK_ATTACHED.get()));
         ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("motor"), (stack, world, entity, seed) -> propertyEquipOverride(stack, MOTOR_ATTACHED.get()));
-        ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("smart"), (stack, world, entity, seed) -> propertyEquipOverride(stack, SMART_MOTOR.get()));
         ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("enderstaff"), (stack, world, entity, seed) -> propertyEquipOverride(stack, ENDER_STAFF_ATTACHED.get()));
         ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("magnet"), (stack, world, entity, seed) -> propertyEquipOverride(stack, MAGNET_ATTACHED.get()));
         ItemProperties.register(ModItems.GRAPPLING_HOOK.get(), GrappleMod.vanillaId("attached"), (stack, world, entity, seed) -> {

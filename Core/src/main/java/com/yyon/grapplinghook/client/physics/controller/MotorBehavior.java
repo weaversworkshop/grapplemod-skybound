@@ -58,7 +58,7 @@ final class MotorBehavior {
             // therefore the other side should slow down in order to match and have both sides pull left/right equally
             // the amount each should pull (the lesser of the two) is minabssidewayspull
             if (pull.dot(facing) > 0 || controller.custom.get(MOTOR_WORKS_BACKWARDS.get())) {
-                if (controller.custom.get(SMART_MOTOR.get()) && controller.grapplehookEntities.size() > 1) {
+                if (controller.grapplehookEntities.size() > 1) {
                     Vec facingxy = new Vec(facing.x, 0, facing.z);
                     Vec facingside = facingxy.cross(new Vec(0, 1, 0)).normalize();
                     Vec sideways = pull.project(facingside);
@@ -126,7 +126,7 @@ final class MotorBehavior {
         // between the motion (after pulling and gravity) vector and the facing vector
         // if double hooks, all hooks are scaled by the same amount (to prevent pulling to the left/right)
         double pullmult = 1;
-        if (controller.custom.get(SMART_MOTOR.get()) && totalPull.y > 0 && !(controller.onGroundTimer > 0 || entity.onGround())) {
+        if (totalPull.y > 0 && !(controller.onGroundTimer > 0 || entity.onGround())) {
             Vec pullxzvector = new Vec(totalPull.x, 0, totalPull.z);
             double pullxz = pullxzvector.length();
             double motionxz = controller.motion.project(pullxzvector).dot(pullxzvector.normalize());

@@ -7,7 +7,6 @@ import com.yyon.grapplinghook.GrappleMod;
 import com.yyon.grapplinghook.content.registry.GrappleModRegistries;
 import com.yyon.grapplinghook.content.customization.helper.PropertyOverride;
 import com.yyon.grapplinghook.content.customization.type.CustomizationProperty;
-import com.yyon.grapplinghook.util.exception.InvalidDataException;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.nbt.*;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -64,10 +63,8 @@ public final class HookCustomization {
 	private HookCustomization(Map<CustomizationProperty<?>, Object> properties, long crc32) {
 		this.values = new HashMap<>(properties);
 
-		// todo: checksum might be redundant these days.
-
 		if(crc32 != this.getChecksum())
-			throw new InvalidDataException("Checksum invalid for hook data!");
+			GrappleMod.LOGGER.warn("Hook customization checksum mismatch (stored={}, computed={}); likely from a removed or added property. Accepting decoded values.", crc32, this.getChecksum());
 	}
 	
 	public HookCustomization() {

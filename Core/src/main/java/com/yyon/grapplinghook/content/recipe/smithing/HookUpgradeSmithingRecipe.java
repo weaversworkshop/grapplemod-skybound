@@ -15,13 +15,13 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeSerializer;
-import net.minecraft.world.item.crafting.SmithingRecipe;
 import net.minecraft.world.item.crafting.SmithingRecipeInput;
+import net.minecraft.world.item.crafting.SmithingTransformRecipe;
 import net.minecraft.world.level.Level;
 
 import java.util.List;
 
-public class HookUpgradeSmithingRecipe implements SmithingRecipe {
+public class HookUpgradeSmithingRecipe extends SmithingTransformRecipe {
 
     private final Ingredient template;
     private final Ingredient addition;
@@ -31,30 +31,33 @@ public class HookUpgradeSmithingRecipe implements SmithingRecipe {
     public HookUpgradeSmithingRecipe(Ingredient template, Ingredient addition,
                                      List<CustomizationProperty<?>> applies,
                                      List<CustomizationProperty<?>> excludesIfAny) {
+        super(template, Ingredient.of(ModItems.GRAPPLING_HOOK.get()), addition, buildPreviewResult(applies));
         this.template = template;
         this.addition = addition;
         this.applies = List.copyOf(applies);
         this.excludesIfAny = List.copyOf(excludesIfAny);
     }
 
-    public Ingredient template() { return template; }
-    public Ingredient addition() { return addition; }
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static ItemStack buildPreviewResult(List<CustomizationProperty<?>> applies) {
+        GrapplehookItem hook = ModItems.GRAPPLING_HOOK.get();
+        ItemStack preview = hook.getDefaultInstance();
+        HookCustomization custom = new HookCustomization();
+        for (CustomizationProperty<?> property : applies) {
+            custom.set((CustomizationProperty) property, Boolean.TRUE);
+        }
+        hook.applyCustomizations(preview, custom);
+        return preview;
+    }
+
+    public Ingredient templateIngredient() { return template; }
+    public Ingredient additionIngredient() { return addition; }
     public List<CustomizationProperty<?>> applies() { return applies; }
     public List<CustomizationProperty<?>> excludesIfAny() { return excludesIfAny; }
 
     @Override
-    public boolean isTemplateIngredient(ItemStack stack) {
-        return this.template.test(stack);
-    }
-
-    @Override
     public boolean isBaseIngredient(ItemStack stack) {
         return stack.is(ModItems.GRAPPLING_HOOK.get());
-    }
-
-    @Override
-    public boolean isAdditionIngredient(ItemStack stack) {
-        return this.addition.test(stack);
     }
 
     @Override
@@ -78,15 +81,10 @@ public class HookUpgradeSmithingRecipe implements SmithingRecipe {
         GrapplehookItem hook = ModItems.GRAPPLING_HOOK.get();
         HookCustomization custom = HookCustomization.copyAllFrom(hook.getCustomizationsOrDefault(base));
         for (CustomizationProperty<?> property : this.applies) {
-            ((HookCustomization) custom).set((CustomizationProperty) property, Boolean.TRUE);
+            custom.set((CustomizationProperty) property, Boolean.TRUE);
         }
         hook.applyCustomizations(base, custom);
         return base;
-    }
-
-    @Override
-    public ItemStack getResultItem(HolderLookup.Provider registries) {
-        return ModItems.GRAPPLING_HOOK.get().getDefaultInstance();
     }
 
     @Override
@@ -94,18 +92,13 @@ public class HookUpgradeSmithingRecipe implements SmithingRecipe {
         return ModRecipeSerializers.HOOK_UPGRADE;
     }
 
-    @Override
-    public boolean isIncomplete() {
-        return this.template.isEmpty() || this.addition.isEmpty();
-    }
-
     public static class Serializer implements RecipeSerializer<HookUpgradeSmithingRecipe> {
 
         private static final Codec<List<CustomizationProperty<?>>> PROPERTY_LIST_CODEC = CustomizationProperty.KEY_CODEC.listOf();
 
         private static final MapCodec<HookUpgradeSmithingRecipe> CODEC = RecordCodecBuilder.mapCodec(inst -> inst.group(
-                Ingredient.CODEC.fieldOf("template").forGetter(HookUpgradeSmithingRecipe::template),
-                Ingredient.CODEC.fieldOf("addition").forGetter(HookUpgradeSmithingRecipe::addition),
+                Ingredient.CODEC.fieldOf("template").forGetter(HookUpgradeSmithingRecipe::templateIngredient),
+                Ingredient.CODEC.fieldOf("addition").forGetter(HookUpgradeSmithingRecipe::additionIngredient),
                 PROPERTY_LIST_CODEC.fieldOf("applies").forGetter(HookUpgradeSmithingRecipe::applies),
                 PROPERTY_LIST_CODEC.optionalFieldOf("excludes_if_any", List.of()).forGetter(HookUpgradeSmithingRecipe::excludesIfAny)
         ).apply(inst, HookUpgradeSmithingRecipe::new));
@@ -115,8 +108,8 @@ public class HookUpgradeSmithingRecipe implements SmithingRecipe {
 
         private static final StreamCodec<RegistryFriendlyByteBuf, HookUpgradeSmithingRecipe> STREAM_CODEC =
                 StreamCodec.composite(
-                        Ingredient.CONTENTS_STREAM_CODEC, HookUpgradeSmithingRecipe::template,
-                        Ingredient.CONTENTS_STREAM_CODEC, HookUpgradeSmithingRecipe::addition,
+                        Ingredient.CONTENTS_STREAM_CODEC, HookUpgradeSmithingRecipe::templateIngredient,
+                        Ingredient.CONTENTS_STREAM_CODEC, HookUpgradeSmithingRecipe::additionIngredient,
                         PROPERTY_LIST_STREAM_CODEC, HookUpgradeSmithingRecipe::applies,
                         PROPERTY_LIST_STREAM_CODEC, HookUpgradeSmithingRecipe::excludesIfAny,
                         HookUpgradeSmithingRecipe::new

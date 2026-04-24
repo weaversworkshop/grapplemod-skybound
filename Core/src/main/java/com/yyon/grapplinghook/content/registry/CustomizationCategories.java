@@ -53,7 +53,7 @@ public class CustomizationCategories {
 
     public static final Entry<CustomizationCategory> MOTOR = category("motor", () -> new CustomizationCategory(
             MOTOR_ATTACHED.get(), MOTOR_ACCELERATION.get(), MAX_MOTOR_SPEED.get(), MOTOR_ACTIVATION.get(),
-            SMART_MOTOR.get(), MOTOR_DAMPENER.get(), MOTOR_WORKS_BACKWARDS.get()
+            MOTOR_DAMPENER.get(), MOTOR_WORKS_BACKWARDS.get()
     ));
 
     public static final Entry<CustomizationCategory> SWING = category("swing", () -> new CustomizationCategory(
