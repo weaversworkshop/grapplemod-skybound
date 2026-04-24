@@ -26,6 +26,8 @@ import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -649,16 +651,9 @@ private boolean rocketKeyDown = false;
 	}
 
 	public void limitVelocity() {
-//		final double MAX_MOTION = GrapplePropertyConfigLoader.CONFIG.maxAirspeed;
-//		if (MAX_MOTION > 0 && this.motion.length() > MAX_MOTION) {
-//			GrappleMod.LOGGER.warn(String.format("Speed limited to %f from %f", MAX_MOTION, this.motion.length()));
-//			this.motion.mutableSetMagnitude(MAX_MOTION);
-//		} else {
-//			GrappleMod.LOGGER.warn(String.format("Speed unlimited as %f", this.motion.length()));
-//		}
-
-		final double MAX_VERTICAL = GrapplePropertyConfigLoader.CONFIG.maxVerticalAirspeed;
-		final double MAX_HORIZONTAL = GrapplePropertyConfigLoader.CONFIG.maxHorizontalAirspeed;
+		double slowness = this.getSlownessFactor();
+		final double MAX_VERTICAL = GrapplePropertyConfigLoader.CONFIG.maxVerticalAirspeed * slowness;
+		final double MAX_HORIZONTAL = GrapplePropertyConfigLoader.CONFIG.maxHorizontalAirspeed * slowness;
 
 		Vec horizontal = motion.removeAlong(new Vec(0, 1, 0));
 		double vertical = motion.y;
@@ -667,7 +662,7 @@ private boolean rocketKeyDown = false;
 			horizontal.mutableSetMagnitude(MAX_HORIZONTAL);
 		}
 
-		if (MAX_VERTICAL > 0 && vertical > MAX_VERTICAL) {
+		if (MAX_VERTICAL > 0 && vertical > 0 && vertical > MAX_VERTICAL) {
 			vertical = MAX_VERTICAL;
 		}
 
@@ -703,8 +698,15 @@ private boolean rocketKeyDown = false;
 	
 	public void applyPlayerMovement() {
 		Vec additionalMotion = this.playerMovement.withMagnitude(0.015 + this.motion.length() * 0.01)
-											      .scale(this.playerMovementMult);
+											      .scale(this.playerMovementMult)
+											      .scale(this.getSlownessFactor());
 		this.motion.mutableAdd(additionalMotion);
+	}
+
+	protected double getSlownessFactor() {
+		MobEffectInstance effect = this.holder == null ? null : this.holder.getEffect(MobEffects.MOVEMENT_SLOWDOWN);
+		if (effect == null) return 1.0;
+		return Math.max(0.0, 1.0 - 0.15 * (effect.getAmplifier() + 1));
 	}
 
 	public void addHookEntity(GrapplinghookEntity hookEntity) {

@@ -88,8 +88,9 @@ public class AirFrictionPhysicsController extends GrapplingHookPhysicsController
 			}
 		}
 
-		double max_motion = GrappleModCommonConfig.get().getMaxStrafeSpeedInAir();
-		double accel = GrappleModCommonConfig.get().getStrafeAcceleration();
+		double slowness = this.getSlownessFactor();
+		double max_motion = GrappleModCommonConfig.get().getMaxStrafeSpeedInAir() * slowness;
+		double accel = GrappleModCommonConfig.get().getStrafeAcceleration() * slowness;
 		Vec motion_horizontal = motion.removeAlong(new Vec(0,1,0));
 		double prev_motion = motion_horizontal.length();
 		Vec new_motion_horizontal = motion_horizontal.add(this.playerMovement.withMagnitude(accel));
