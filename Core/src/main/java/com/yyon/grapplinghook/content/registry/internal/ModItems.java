@@ -8,7 +8,6 @@ import com.yyon.grapplinghook.content.registry.helper.AbstractRegistryReference;
 import com.yyon.grapplinghook.content.registry.helper.TabBuilder;
 import com.yyon.grapplinghook.content.customization.HookTemplates;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
-import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -16,8 +15,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.*;
-import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.Enchantments;
 
 import java.util.*;
 import java.util.function.Supplier;
@@ -51,7 +48,7 @@ public final class ModItems {
     public static final ItemEntry<RocketUpgradeItem> ROCKET_UPGRADE = ModItems.item("rocket_upgrade", RocketUpgradeItem::new);
     public static final ItemEntry<DyeBagUpgrade> DYE_BAG_UPGRADE = ModItems.item("dye_bag_upgrade", DyeBagUpgrade::new);
 
-    public static final ItemEntry<LongFallBootsItem> LONG_FALL_BOOTS = ModItems.item("long_fall_boots", LongFallBootsItem::new, ItemEntry.populateBootVariants());
+    public static final ItemEntry<LongFallBootsItem> LONG_FALL_BOOTS = ModItems.item("long_fall_boots", LongFallBootsItem::new);
     public static final ItemEntry<LongFallBootsTemplateItem> LONG_FALL_BOOTS_SMITHING_TEMPLATE = ModItems.item("long_fall_boots_smithing_template", LongFallBootsTemplateItem::new);
 
     private static final CreativeModeTab.DisplayItemsGenerator MOD_TAB_GENERATOR = (displayParameters, output) -> {
@@ -134,14 +131,6 @@ public final class ModItems {
             return displayParams -> List.of(this.get().getDefaultInstance());
         }
 
-        private static TabBuilder populateBootVariants() {
-            return displayParams -> {
-                ItemStack plainItem = LONG_FALL_BOOTS.get().getDefaultInstance();
-                tryApplyEnchantment(displayParams, plainItem, Enchantments.FEATHER_FALLING, 4);
-                return List.of(plainItem);
-            };
-        }
-
         private static TabBuilder populateHookVariantsInTab() {
             return displayParams -> {
                 ArrayList<ItemStack> grappleHookVariants = new ArrayList<>();
@@ -155,18 +144,5 @@ public final class ModItems {
                 return grappleHookVariants;
             };
         }
-    }
-
-    private static boolean tryApplyEnchantment(CreativeModeTab.ItemDisplayParameters tabParams, ItemStack item, ResourceKey<Enchantment> enchantment, int level) {
-        Optional<Holder.Reference<Enchantment>> optRegEnch = tabParams.holders()
-                .lookupOrThrow(Registries.ENCHANTMENT)
-                .get(enchantment);
-
-        if(optRegEnch.isPresent()) {
-            item.enchant(optRegEnch.get(), level);
-            return true;
-        }
-
-        return false;
     }
 }
