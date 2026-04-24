@@ -47,7 +47,7 @@ public final class HookHostDisassembly {
 
                 BlockPos localBlock = localBlockOf.apply(typed);
                 if (localBlock == null) {
-                    hook.detachFromContraption();
+                    hook.releaseAndRemove();
                     continue;
                 }
 
@@ -60,7 +60,7 @@ public final class HookHostDisassembly {
                 double dist = HookAnchorMigration.distancePointToAabb(hookPos, new AABB(candidate));
 
                 if (state.isAir() || dist > HookAnchorMigration.DISASSEMBLY_REANCHOR_MAX_DIST) {
-                    hook.detachFromContraption();
+                    hook.releaseAndRemove();
                     continue;
                 }
 
@@ -69,7 +69,7 @@ public final class HookHostDisassembly {
                 GrappleMod.LOGGER.error("{} reanchor for hook {} failed; detaching as fallback",
                         logTag, hook != null ? hook.getId() : "null", err);
                 if (hook != null && hook.isAlive()) {
-                    try { hook.detachFromContraption(); } catch (Throwable ignored) {}
+                    try { hook.releaseAndRemove(); } catch (Throwable ignored) {}
                 }
             }
         }

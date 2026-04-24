@@ -19,7 +19,6 @@ import com.yyon.grapplinghook.physics.rope.AnchorSpace;
 import com.yyon.grapplinghook.physics.rope.RopeBend;
 import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
 import com.yyon.grapplinghook.physics.attach.HookAttachment;
-import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
 import com.yyon.grapplinghook.physics.io.RopeSnapshot;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.Vec;
@@ -315,7 +314,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		weapon.hurtAndBreak(5, player, LivingEntity.getSlotForHand(hand));
 
 		if (this.cutCount >= config.getHookCutsRequired()) {
-			this.detachFromContraption();
+			this.releaseAndRemove();
 		}
 		return InteractionResult.CONSUME;
 	}
@@ -395,7 +394,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 				motion = motion.removeAlong(ropevec);
 			}
 
-			this.setVelocityActually(motion.x, motion.y, motion.z);
+			this.setVelocity(motion.x, motion.y, motion.z);
 
 			ropevec.mutableSetMagnitude(this.ropeLength - distToFarthest);
 			Vec newpos = ropevec.add(farthest);
@@ -421,7 +420,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		this.shoot(direction.getX(), direction.getY(), direction.getZ(), (float) speed, inaccuracy);
 	}
 
-	public void setVelocityActually(double x, double y, double z) {
+	public void setVelocity(double x, double y, double z) {
 		this.setDeltaMovement(x, y, z);
 
         if (this.xRotO == 0.0F && this.yRotO == 0.0F) {
@@ -537,7 +536,7 @@ public void reattachToBlock(BlockPos blockPos, Vec3 hookWorldPos) {
 		GrappleModUtils.sendToCorrectClient(packet, this.shootingEntityID, this.level());
 	}
 
-	public void detachFromContraption() {
+	public void releaseAndRemove() {
 		if (this.level().isClientSide) return;
 		if (this.shootingEntityID != 0) {
 			GrappleModUtils.sendToCorrectClient(
