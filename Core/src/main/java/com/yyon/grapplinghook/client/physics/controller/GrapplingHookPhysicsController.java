@@ -7,6 +7,7 @@ import com.yyon.grapplinghook.config.GrappleModClientConfig;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.config.GrapplePropertyConfigLoader;
 import com.yyon.grapplinghook.content.entity.grapplinghook.GrapplinghookEntity;
+import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import com.yyon.grapplinghook.physics.rope.RopeSegmentHandler;
 import com.yyon.grapplinghook.content.physics.PhysicsControllers;
 import com.yyon.grapplinghook.content.customization.data.HookCustomization;

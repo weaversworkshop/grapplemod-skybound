@@ -8,6 +8,7 @@ import com.yyon.grapplinghook.integration.SubLevelIntegration;
 import com.yyon.grapplinghook.physics.ServerHookEntityTracker;
 import com.yyon.grapplinghook.physics.attach.HookAttachment;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
+import dev.ryanhcode.sable.companion.math.Pose3dc;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
@@ -143,6 +144,9 @@ public class SableCompatModule {
 
     private static void onSubLevelDisassembled(UUID subLevelId, Level level) {
         SubLevelIntegration sli = GrappleModIntegrations.getSubLevelIntegration();
+        if (level.isClientSide) return;
+
+        migrateHooksToSplitHost(sli, subLevelId, level);
 
         HookHostDisassembly.reanchorAfterHostGone(
                 level,
@@ -152,5 +156,57 @@ public class SableCompatModule {
                 plotCenter -> sli.plotToWorld(subLevelId, plotCenter, GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS),
                 "[Grapple <-> Sable]"
         );
+    }
+
+    private static void migrateHooksToSplitHost(SubLevelIntegration sli, UUID oldSubLevelId, Level level) {
+        SableSubLevelIntegration sable = instance != null ? instance.integration : null;
+        SubLevel oldSub = sable != null ? sable.getSubLevel(oldSubLevelId) : null;
+        Pose3dc oldPose = oldSub != null ? oldSub.logicalPose() : null;
+        if (oldPose == null) return;
+
+        for (GrapplinghookEntity hook : ServerHookEntityTracker.getAllTrackedHooks()) {
+            if (hook == null || !hook.isAlive()) continue;
+            if (hook.level() != level) continue;
+            if (!(hook.attachment() instanceof HookAttachment.SubLevelBlock slb)) continue;
+            if (!slb.subLevelId().equals(oldSubLevelId)) continue;
+
+            Vec3 oldPlotCenter = new Vec3(
+                    slb.plotBlock().getX() + 0.5,
+                    slb.plotBlock().getY() + 0.5,
+                    slb.plotBlock().getZ() + 0.5);
+            Vec3 worldBlockCenter;
+            Vec3 worldHit;
+            try {
+                worldBlockCenter = oldPose.transformPosition(oldPlotCenter);
+                worldHit = oldPose.transformPosition(slb.plotHitPoint());
+            } catch (Throwable err) {
+                LOGGER.warn("[Grapple <-> Sable] Split migration hookId={} — old pose transform threw; skipping migration.",
+                        hook.getId(), err);
+                continue;
+            }
+            BlockPos worldBlock = BlockPos.containing(worldBlockCenter);
+
+            UUID[] newHost = { null };
+            BlockPos[] newPlotBlock = { null };
+            sli.forEachTrackedSubLevel((id, aabb) -> {
+                if (newHost[0] != null) return;
+                if (id.equals(oldSubLevelId)) return;
+                if (!aabb.inflate(1.0).contains(worldBlockCenter)) return;
+                BlockPos candidate = sli.getCapturedPlotPos(id, worldBlock);
+                if (candidate != null) {
+                    newHost[0] = id;
+                    newPlotBlock[0] = candidate;
+                }
+            });
+
+            if (newHost[0] == null) continue;
+
+            Vec3 newPlotHit = sli.worldToPlot(newHost[0], worldHit,
+                    GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
+
+            LOGGER.info("[Grapple <-> Sable] Split migration hookId={} {} -> {} worldBlock={} newPlotBlock={}",
+                    hook.getId(), oldSubLevelId, newHost[0], worldBlock, newPlotBlock[0]);
+            hook.reattachToSubLevel(newHost[0], newPlotBlock[0], newPlotHit);
+        }
     }
 }
