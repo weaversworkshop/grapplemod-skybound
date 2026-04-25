@@ -10,6 +10,7 @@ import com.yyon.grapplinghook.content.registry.CustomizationProperties;
 import com.yyon.grapplinghook.content.registry.internal.*;
 import com.yyon.grapplinghook.network.NetworkManager;
 import com.yyon.grapplinghook.physics.ServerPhysicsObserver;
+import com.yyon.grapplinghook.physics.persistence.HookPersistenceManager;
 import com.yyon.grapplinghook.util.GrappleModUtils;
 import com.yyon.grapplinghook.util.scheduling.Ticker;
 import dev.isxander.yacl3.platform.YACLPlatform;
@@ -100,9 +101,13 @@ public class GrappleMod implements ModInitializer {
         this.registerDataPacks();
 
         ServerTickEvents.START_SERVER_TICK.register(this.ticker::tick);
+        ServerTickEvents.END_SERVER_TICK.register(HookPersistenceManager::tickServer);
 
         ServerLifecycleEvents.SERVER_STARTING.register(server -> currentServerInstance = server);
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> currentServerInstance = null);
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            HookPersistenceManager.clearAll();
+            currentServerInstance = null;
+        });
     }
 
     private void initConfig() {

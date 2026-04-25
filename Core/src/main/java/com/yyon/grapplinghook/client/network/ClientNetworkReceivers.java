@@ -120,7 +120,14 @@ public final class ClientNetworkReceivers {
                         payload.bottomFacing().toVanilla());
                 segmentHandler.addBend(payload.index(), bend);
             } else {
-                segmentHandler.removeSegment(payload.index());
+                int idx = payload.index();
+                int size = segmentHandler.getBends().size();
+                if (size <= 2 || idx <= 0 || idx >= size - 1) {
+                    GrappleMod.LOGGER.warn("[Grapple] Client refusing rope-segment remove (would break size>=2 invariant). hookId={} index={} size={}",
+                            payload.hookId(), idx, size);
+                } else {
+                    segmentHandler.removeSegment(idx);
+                }
             }
         }
     }

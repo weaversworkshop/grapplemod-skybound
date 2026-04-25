@@ -350,6 +350,14 @@ public void removeSegment(int index) {
 	}
 
 	public Vec getClosest(Vec hookpos) {
+		if (this.bends.size() < 2) {
+			GrappleMod.LOGGER.warn("[Grapple] getClosest called with bends.size()={}; segment handler invariant violated. side={} hookId={}",
+					this.bends.size(),
+					this.world != null && this.world.isClientSide ? "CLIENT" : "SERVER",
+					this.hookEntity != null ? this.hookEntity.getId() : -1,
+					new Throwable("getClosest size<2 trace"));
+			return this.bends.isEmpty() ? hookpos : this.bends.get(0).worldPos;
+		}
 		this.setEndpoint(0, hookpos);
 		return this.bends.get(this.bends.size() - 2).worldPos;
 	}

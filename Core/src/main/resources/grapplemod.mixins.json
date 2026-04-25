@@ -11,6 +11,7 @@
     "PlayerJoinMixin",
     "SendExtraEntityDataMixin",
     "ServerPlayerMixin",
+    "ServerPlayerPersistenceMixin",
     "ServerStartMixin"
   ],
   "client": [

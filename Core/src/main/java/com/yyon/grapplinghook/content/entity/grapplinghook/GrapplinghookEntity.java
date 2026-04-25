@@ -192,7 +192,7 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 	@Override
 	protected double getDefaultGravity() {
-		if (this.isAttachedToAnything())
+		if (this.isAttachedToAnything() || this.isAttachedToSurface)
 			return 0.0F;
 
 		return this.customization.get(HOOK_GRAVITY_MULTIPLIER.get()).floatValue() * 0.1F;
@@ -251,13 +251,24 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 
 		if (this.attachment != null && !this.attachment.follow(this, sli)) return;
 
-		boolean hookIsDetached = !this.level().isClientSide &&
-				                  this.shootingEntity != null &&
-				                 !this.isAttachedToAnything();
+		if (this.level().isClientSide || this.shootingEntity == null) return;
 
-		if(!hookIsDetached) return;
+		if (this.isAttachedToAnything()) {
+			this.handleAttachedRope();
+		} else {
+			this.handleHookPhysics();
+		}
+	}
 
-		this.handleHookPhysics();
+	private void handleAttachedRope() {
+		Vec hookPos = this.getRopeAnchorHookPos();
+		Vec playerPos = this.getRopeOriginAtHolder();
+		boolean skipRopeWrap = this.customization.get(BLOCK_PHASE_ROPE.get());
+		if (skipRopeWrap) {
+			this.segmentHandler.updatePos(hookPos, playerPos, this.ropeLength);
+		} else {
+			this.segmentHandler.update(hookPos, playerPos, this.ropeLength, false);
+		}
 	}
 
 	public boolean isAttachedToAnything() {
@@ -409,6 +420,18 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 		if (shouldAttactMagnet) HookMagnetBehavior.handleMagnetAttraction(this);
 	}
 
+
+	public void initForRestore(LivingEntity shooter, boolean mainHand, boolean inDoublePair,
+	                           HookCustomization customization, double ropeLength, Vec3 worldPos) {
+		this.shootingEntity = shooter;
+		this.shootingEntityID = shooter.getId();
+		this.isAttachedToMainHand = mainHand;
+		this.isInDoublePair = inDoublePair;
+		this.customization = customization;
+		this.ropeLength = ropeLength;
+		this.setPos(worldPos.x, worldPos.y, worldPos.z);
+		this.setDeltaMovement(0, 0, 0);
+	}
 
 	public void removeServer() {
 		this.setAttachment(null);

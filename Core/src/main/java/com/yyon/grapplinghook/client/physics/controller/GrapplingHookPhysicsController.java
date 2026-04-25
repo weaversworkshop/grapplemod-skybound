@@ -289,12 +289,7 @@ private boolean rocketKeyDown = false;
 			Vec ropeEndpoint = hookEntity.getRopeOriginAtHolder();
 			RopeSegmentHandler segmentHandler = hookEntity.getSegmentHandler();
 
-			boolean skipRopeWrap = this.custom.get(BLOCK_PHASE_ROPE.get());
-			if (skipRopeWrap) {
-				segmentHandler.updatePos(ropeHookPos, ropeEndpoint, hookEntity.ropeLength);
-			} else {
-				segmentHandler.update(ropeHookPos, ropeEndpoint, hookEntity.ropeLength, false);
-			}
+			segmentHandler.updatePos(ropeHookPos, ropeEndpoint, hookEntity.ropeLength);
 
 			// vectors along rope
 			Vec anchor = segmentHandler.getClosest(hookPos);
