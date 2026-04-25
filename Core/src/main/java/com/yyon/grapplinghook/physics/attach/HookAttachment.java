@@ -127,7 +127,7 @@ public sealed interface HookAttachment
             }
             Vec target = Vec.positionVec(e).add(new Vec(0, e.getBbHeight() * 0.5, 0));
             hook.setPos(target.x, target.y, target.z);
-            hook.setDeltaMovement(e.getDeltaMovement());
+            hook.setDeltaMovement(0, 0, 0);
             return true;
         }
     }
@@ -201,7 +201,7 @@ public sealed interface HookAttachment
             }
             Vec3 worldPoint = worldHitPoint(GrapplinghookEntity.CONTRAPTION_PARTIAL_TICKS);
             hook.setPos(worldPoint.x, worldPoint.y, worldPoint.z);
-            hook.setDeltaMovement(e.getDeltaMovement());
+            hook.setDeltaMovement(0, 0, 0);
             return true;
         }
     }

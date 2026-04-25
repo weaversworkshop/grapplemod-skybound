@@ -85,7 +85,7 @@ final class HookFlightController {
         EntityHitResult entityHit = ProjectileUtil.getEntityHitResult(
                 hook.level(), hook, start, end,
                 hook.getBoundingBox().expandTowards(delta).inflate(1.0),
-                e -> !e.isSpectator() && e.isAlive() && e.isPickable());
+                e -> !e.isSpectator() && e.isAlive() && e.isPickable() && !(e instanceof GrapplinghookEntity));
 
         BlockHitResult blockHit = GrappleModUtils.rayTraceBlocks(hook, hook.level(), new Vec(start), new Vec(end));
 

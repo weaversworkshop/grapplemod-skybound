@@ -303,6 +303,12 @@ public class GrapplinghookEntity extends ThrowableItemProjectile implements IExt
 	}
 
 	@Override
+	protected boolean canHitEntity(Entity target) {
+		if (target instanceof GrapplinghookEntity) return false;
+		return super.canHitEntity(target);
+	}
+
+	@Override
 	public InteractionResult interact(Player player, InteractionHand hand) {
 		if (this.level().isClientSide) {
 			return player.getItemInHand(hand).getItem() == Items.SHEARS
