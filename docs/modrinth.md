@@ -1,4 +1,4 @@
-[![](https://raw.githubusercontent.com/weaversworkshop/grapplemod-skybound/1.21.1-release/docs/media/grapplemod-skybound-banner.png)](https://github.com/weaversworkshop/grapplemod-skybound)
+[![GrappleMod: Skybound banner](https://raw.githubusercontent.com/weaversworkshop/grapplemod-skybound/1.21.1-release/docs/media/grapplemod-skybound-banner.png)](https://github.com/weaversworkshop/grapplemod-skybound)
 
 [![Minecraft Version](https://img.shields.io/badge/Minecraft-v1.21.1-blue?style=flat-square)](https://www.minecraft.net/en-us)
 [![Fabric Loader Version](https://img.shields.io/badge/Fabric_Loader-v0.16.14-AA8554?style=flat-square)](https://fabricmc.net/use/installer/)

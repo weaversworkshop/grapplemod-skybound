@@ -1,6 +1,6 @@
 # GrappleMod: Skybound
 
-[![](./docs/media/grapplemod-skybound-banner.png)](https://github.com/weaversworkshop/grapplemod-skybound)
+[![GrappleMod: Skybound banner](./docs/media/grapplemod-skybound-banner.png)](https://github.com/weaversworkshop/grapplemod-skybound)
 
 [![Minecraft Version](https://img.shields.io/badge/Minecraft-v${minecraft_version}-blue?style=flat-square)](https://www.minecraft.net/en-us)
 [![Fabric Loader Version](https://img.shields.io/badge/Fabric_Loader-v${loader_version}-AA8554?style=flat-square)](https://fabricmc.net/use/installer/)
