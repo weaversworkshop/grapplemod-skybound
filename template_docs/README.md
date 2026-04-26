@@ -1,78 +1,43 @@
-[![](./docs/media/banner.png)](https://github.com/CloudG360/grapplemod-restitched)
+# GrappleMod: Skybound
+
+[![](./docs/media/grapplemod-skybound-banner.png)](https://github.com/weaversworkshop/grapplemod-skybound)
 
 [![Minecraft Version](https://img.shields.io/badge/Minecraft-v${minecraft_version}-blue?style=flat-square)](https://www.minecraft.net/en-us)
 [![Fabric Loader Version](https://img.shields.io/badge/Fabric_Loader-v${loader_version}-AA8554?style=flat-square)](https://fabricmc.net/use/installer/)
-[![Cloth Config Version](https://img.shields.io/badge/Cloth_Config-v${clothconfig_version}-pink?style=flat-square)](https://modrinth.com/mod/cloth-config)
+[![YACL Version](https://img.shields.io/badge/YACL-v${yacl_version}-pink?style=flat-square)](https://modrinth.com/mod/yacl)
 [![Mod Menu Version](https://img.shields.io/badge/Mod_Menu-v${modmenu_version}-indigo?style=flat-square)](https://modrinth.com/mod/modmenu)
 [![GPL-3.0](https://img.shields.io/badge/License-GNU_GPL_3.0-mint?style=flat-square)](https://www.gnu.org/licenses/gpl-3.0.en.html)
-
-[![Modrinth](https://img.shields.io/modrinth/dt/f4hp6FTb?logo=modrinth&style=flat-square)](https://modrinth.com/mod/grappling-hook-mod-fabric)
-[![Curseforge](https://cf.way2muchnoise.eu/short_grappling-hook-restitched.svg?badge_style=flat)](https://www.curseforge.com/minecraft/mc-mods/grappling-hook-restitched)
-
----
-
-# ⚠️ Development Notice
-
-This branch is currently in active development and hasn't yet had a public release.
-This means it is **NOT** stable. So depending on your use-case:
-
-- If you want to port the mod to another version of Minecraft, do *not* use this.
-    - Use the [Stable-V1 branch](https://github.com/CloudG360/grapplemod-restitched/tree/stable-v1) instead.
-- If you want to translate for the mod, *I highly recommend that you use this branch!*
-    - v2 has changed a lot of translation ids
-    - Most of the translations have settled, minus changes to config translations.
-- If you want to add a feature to the mod, *I highly recommend that you use this branch!*
-    - It may take a bit of time to be merged but it will eventually.
-    - Code added to v1 will not to added to v2 unless it is a small patch fix.
 
 ---
 
 # Project Overview
 
-A classic Grappling Hook mod with great physics and a wide range of customizations! This Minecraft mod is written for
-the Fabric & Quilt mod loaders for modern versions of Minecraft (1.18.2+) - Changes tend to focus on making it more
-extendable, as well as improving compatibility with other mods. Improvements to older features are also being sprinkled
-in from time to time.
+Skybound is an independent fork of [grapplemod-restitched](https://github.com/squeeglii/grapplemod-restitched)
+(by CG360 / squeeglii), itself a Fabric port of [Yyon's Grappling Hook Mod (Forge)](https://github.com/yyon/grapplemod).
+The mod adds Grappling Hooks to Minecraft with an assortment of items to complement them, and a wide range of
+customizations.
 
-This mod's official project pages can be found below:
+Skybound focuses on **dynamic physics-object support**, allowing players to grapple onto Create contraptions and Sable ships.
+Enhanced multiplayer features and upgraded rope physics and rendering.
 
-- [Modrinth](https://modrinth.com/mod/grappling-hook-mod-fabric) (Preferred)
-- [CurseForge](https://curseforge.com/minecraft/mc-mods/grappling-hook-restitched) 
+Targeting Minecraft 1.21.1+ on Fabric, with NeoForge support planned.
 
-Fabric compatability *comes first* due to its current adoption in the Minecraft Modding community, however Quilt is
-supported by the mod currently! In the case that either Mod Loader encounters a problem, make sure to
-[submit a bug report!](https://github.com/CloudG360/grapplemod-restitched)
+If you encounter a problem, please [submit a bug report!](https://github.com/weaversworkshop/grapplemod-skybound/issues)
 
-
-
-## 🔗 Origins
-
-This repository is an unofficial fork of Yyon's [Grappling Hook Mod](https://github.com/yyon/grapplemod), which was 
-written to support the Forge mod loader. It has a history stretching back all the way to its MCreator roots in 2015,
-implementing improved physics, upgrades, and better integrations since.
-
-You can find the links to its official project pages (and the downloads) here:
-
-- [Modrinth](https://modrinth.com/mod/grappling-hook-mod/versions)
-- [CurseForge](https://www.curseforge.com/minecraft/mc-mods/grappling-hook-mod) (More up-to-date? Last checked 19/6/23)
-
-This fork's root stems from the 1.19.2 version of v13, created under the original scope of providing an alternative
-under the Fabric & Quilt ecosystems, as well as updating these ports to future versions. With the original scope met,
-future versions now focus on enhancements on top of the original work, as well as perpetual support into the future.
-
-
-## 📜 Credits:
+## 📜 Credits
 
 See [ATTRIBUTIONS.md](/ATTRIBUTIONS.md) for credits with attached licenses, such as for sounds and code.
 There are some smaller credits also found on [the original Forge repository!](https://github.com/yyon/grapplemod/)
 which have been omitted here.
 
-### Technical Contributions
+### Major Components
 
 - **Original Mod** - Yyon
 - **Textures** - Mayesnake
 - **Forge 1.18 / 1.19 Updates** - Nyfaria
-- **Fabric/Quilt 1.18.2+** - CG360
+- **Fabric/Quilt Port (1.18.2+)** - CG360
+- **Dynamic Physics Object Support (Create / Sable)** - weaversworkshop
+- **Multiplayer Stability & Server-Authoritative State** - weaversworkshop
 
 ### Translations
 
@@ -86,11 +51,7 @@ which have been omitted here.
 
 # Contributing
 
-Pull Requests and Issues are always welcome! Try to stick to templates where available but deviate if some components
-don't apply. Detail is important when debugging an issue or trying to implement a new system however so prioritise
-that!
-
-Thanks for any help in advance! :)  -- I keep an eye out for Issues and PRs fairly regularly.
+PRs and Issues are welcome! Please make a specific branch for your feature or bug-fix.
 
 
 ## 📦 Building/Running the project
@@ -118,7 +79,7 @@ generation on other subprojects.*
 ## 📈 Updating Versions / Adding Dependencies
 
 > Note: Configs intentionally don't work outside of release versions due to a lack of
-> ClothConfig support. There is a warning in-game for this.
+> YACL support. There is a warning in-game for this.
 
 A lot of this project is streamlined to make version updates quicker by reducing the amount of redundant version
 strings. All mod dependencies should have their versions listed in the `gradle.properties` file, using variables
