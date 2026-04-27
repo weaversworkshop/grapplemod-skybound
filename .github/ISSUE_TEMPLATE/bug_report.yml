@@ -1,0 +1,65 @@
+name: Bug Report
+description: Report a bug in GrappleMod Skybound. Please confirm the issue is caused by this mod (not another) before filing.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the bug, including steps to reproduce. Images and videos help a lot.
+      placeholder: |
+        Steps to reproduce:
+        1. ...
+        2. ...
+
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: input
+    id: skybound-version
+    attributes:
+      label: Skybound version
+      placeholder: e.g. 1.0+1.21.1
+    validations:
+      required: true
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft version
+      placeholder: e.g. 1.21.1
+    validations:
+      required: true
+
+  - type: input
+    id: loader-version
+    attributes:
+      label: Fabric Loader version
+      placeholder: e.g. 0.16.14
+    validations:
+      required: true
+
+  - type: textarea
+    id: compat-mods
+    attributes:
+      label: Compatibility-relevant mods (if applicable)
+      description: If the bug involves moving structures, list versions of Create, Sable, and/or Create&#58; Aeronautics. Otherwise leave blank.
+      placeholder: |
+        Create: ...
+        Sable: ...
+        Create: Aeronautics: ...
+
+  - type: textarea
+    id: crash-log
+    attributes:
+      label: Crash log
+      description: If this is a crash, paste a link to the full log on https://mclo.gs or https://pastebin.com. Do not paste the log inline.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else — screenshots, video, full mod list, server vs single-player, etc.

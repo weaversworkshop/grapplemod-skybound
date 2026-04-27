@@ -1,0 +1,59 @@
+name: Mod Incompatibility
+description: Report an incompatibility between Skybound and another mod.
+title: "[Incompat]: "
+labels: ["incompatibility"]
+body:
+  - type: textarea
+    id: affected-mods
+    attributes:
+      label: Affected mods
+      description: List every mod involved in the incompatibility, including versions.
+      placeholder: |
+        - ExampleMod 1.2.3
+        - OtherMod 4.5.6
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the incompatibility and how to reproduce it.
+    validations:
+      required: true
+
+  - type: input
+    id: skybound-version
+    attributes:
+      label: Skybound version
+      placeholder: e.g. 1.0+1.21.1
+    validations:
+      required: true
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft version
+      placeholder: e.g. 1.21.1
+    validations:
+      required: true
+
+  - type: input
+    id: loader-version
+    attributes:
+      label: Fabric Loader version
+      placeholder: e.g. 0.16.14
+    validations:
+      required: true
+
+  - type: textarea
+    id: crash-log
+    attributes:
+      label: Crash log
+      description: If this is a crash, paste a link to the full log on https://mclo.gs or https://pastebin.com.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else — screenshots, video, full mod list, etc.
