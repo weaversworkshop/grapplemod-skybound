@@ -10,106 +10,61 @@
 
 ---
 
-# Project Overview
+> ✅ **Stable branch.** This is the release branch for Minecraft 1.21.1. For in-progress work, see [`1.21.1-dev`](https://github.com/weaversworkshop/grapplemod-skybound/tree/1.21.1-dev).
+
+# Overview
 
 Skybound is an independent fork of [grapplemod-restitched](https://github.com/squeeglii/grapplemod-restitched)
-(by CG360 / squeeglii), itself a Fabric port of [Yyon's Grappling Hook Mod (Forge)](https://github.com/yyon/grapplemod).
-The mod adds Grappling Hooks to Minecraft with an assortment of items to complement them, and a wide range of
-customizations.
+(by CG360 / squeeglii), itself a Fabric port of [Yyon's Grappling Hook Mod](https://github.com/yyon/grapplemod).
+The mod adds Grappling Hooks to Minecraft with a wide range of upgrades and customization.
 
-Skybound focuses on **dynamic physics-object support**, allowing players to grapple onto Create contraptions and Sable ships.
-Enhanced multiplayer features and upgraded rope physics and rendering.
+This fork focuses on two things the upstream mod didn't handle well:
 
-Targeting Minecraft 1.21.1+ on Fabric, with NeoForge support planned.
+1. **Moving structures.** Grapple onto Create contraptions, Sable sublevels, and Create: Aeronautics airships. The rope tracks position and rotation, survives sublevel splits, and wraps around partial blocks correctly.
+2. **Multiplayer.** Hook and rope state is server-authoritative — other players see exactly what you see, hooks survive relogs, and ropes can be cut with shears.
 
-If you encounter a problem, please [submit a bug report!](https://github.com/weaversworkshop/grapplemod-skybound/issues)
+Targeting Minecraft 1.21.1 on Fabric. NeoForge support is planned.
+
+## Features
+
+- **Grappling Hook** with upgrades for motors, rockets, ender teleports, magnets, dual hooks, forcefields, and configurable rope styles.
+- **Long Fall Boots** to land safely after a long swing.
+- All upgrades apply at a vanilla **Smithing Table**.
+- Built-in resource pack variants: classic textures, hook-only, no-enchants, classic recipes.
+- `useLimitedHook` gamerule for servers that want to restrict where hooks can attach.
+- A small set of advancements to guide new players.
+
+## Compatibility
+
+- **[Create](https://modrinth.com/mod/create-fabric)** — grapple onto assembled contraptions.
+- **[Sable](https://modrinth.com/mod/sable)** — grapple onto sublevels (moving block-spaces).
+- **[Create: Aeronautics](https://github.com/Create-Aeronautics/Create-Aeronautics)** — supported transitively via Sable.
+
+## Reporting Issues
+
+Found a bug? [Open an issue](https://github.com/weaversworkshop/grapplemod-skybound/issues). Include your Minecraft version, Fabric Loader version, and a list of installed mods if possible.
 
 ## 📜 Credits
 
-See [ATTRIBUTIONS.md](/ATTRIBUTIONS.md) for credits with attached licenses, such as for sounds and code.
-There are some smaller credits also found on [the original Forge repository!](https://github.com/yyon/grapplemod/)
-which have been omitted here.
+See [ATTRIBUTIONS.md](/ATTRIBUTIONS.md) for full credits with attached licenses.
 
 ### Major Components
 
-- **Original Mod** - Yyon
-- **Textures** - Mayesnake
-- **Forge 1.18 / 1.19 Updates** - Nyfaria
-- **Fabric/Quilt Port (1.18.2+)** - CG360
-- **Dynamic Physics Object Support (Create / Sable)** - weaversworkshop
-- **Multiplayer Stability & Server-Authoritative State** - weaversworkshop
+- **Original Mod** — Yyon
+- **Textures** — Mayesnake
+- **Forge 1.18 / 1.19 Updates** — Nyfaria
+- **Fabric/Quilt Port (1.18.2+)** — CG360
+- **Dynamic Physics Object Support (Create / Sable)** — weaversworkshop
+- **Multiplayer Stability & Server-Authoritative State** — weaversworkshop
 
 ### Translations
 
-- **Russian** - Blueberryy
-- **French** - Neerwan
-- **Brazilian Portuguese** - Eufranio
-
-
---- 
-
-
-# Contributing
-
-PRs and Issues are welcome! Please make a specific branch for your feature or bug-fix.
-
-
-## 📦 Building/Running the project
-
-The full project can be built with:
-
-- `gradle clean-all bundle-compat-modules` / `gradlew clean-all bundle-compat-modules` depending on your install.
-  - This should build to `/build/` in the root project with all the compatibility extensions bundled in
-- If you want to just build the core mod, `gradle clean-all :Core:build collect-jars` / `gradlew clean-all :Core:build collect-jars`
-  - This should build to `/build/` in the root project using the original build behaviour.
-
-If running the mod in a dev environment, runs should be created automatically. If not, consult the
-[Fabric Loom Wiki](https://fabricmc.net/wiki/documentation:fabric_loom) on how to generate these through gradle.
-
-Once the runs are generated, running them should place the environments for each in the following isolated folders:
-
-- Client `[sub project]/run/client/`
-- Server `[sub project]/run/server/`
-
-*Note that runs are only generated for the Core project - See ideConfigGenerated on the loom wiki for how to enable 
-generation on other subprojects.*
-
-
-
-## 📈 Updating Versions / Adding Dependencies
-
-> Note: Configs intentionally don't work outside of release versions due to a lack of
-> YACL support. There is a warning in-game for this.
-
-A lot of this project is streamlined to make version updates quicker by reducing the amount of redundant version
-strings. All mod dependencies should have their versions listed in the `gradle.properties` file, using variables
-to drop them into files such as `fabric.mod.json` & this README when needed. Minecraft & Fabric versions are handled in
-the exact same way for the same reasons.
-
-
-### For Minecraft Version Updates:
-
-- Check [the Fabric Develop utility](https://fabricmc.net/develop/) to get the version strings for a version
-    - do NOT use `yarn_mappings` -- this project uses Mojmaps
-- Copy the versions found into the appropriate entries found in `gradle.properties`
-    - `minecraft_long_version` is the same as `minecraft_version` for __release__ versions and __snapshot__ versions
-    - For __pre-releases__ and __release candidates__, they should have an extra dot (`1.20-pre1` -> `1.20-pre.1`)
-    - This is because the loaded Fabric dependency and the mappings are named with slightly different schemes. :(
-- Run `gradle updateDocTemplates` / `gradlew updateDocTemplates` to update any documentation that lists versions
-
-
-### For Updating Dependencies:
-
-- Change the dependency version found in `gradle.properties`
-- Run `gradle updateDocTemplates` / `gradlew updateDocTemplates` to update any documentation that lists versions
-
-
-### For New Dependencies:
-
-- Add a new entry to `gradle.properties` with the dependency's version.
-- Add the dependency inside `build.gradle`, using a project placeholder referencing the `gradle.properties` property
-- Add the dependency to the `fabric.mod.json`, using a placeholder referencing the `gradle.properties` property
-- Add a new badge to `/template_docs/README.md`, using a placeholder referencing the `gradle.properties` property
-- Run `gradle updateDocTemplates` / `gradlew updateDocTemplates` to update any documentation that lists versions
+- **Russian** — Blueberryy
+- **French** — Neerwan
+- **Brazilian Portuguese** — Eufranio
 
 ---
+
+## Contributing
+
+PRs and issues are welcome — please target the [`1.21.1-dev`](https://github.com/weaversworkshop/grapplemod-skybound/tree/1.21.1-dev) branch, which has the build instructions and versioning workflow.
