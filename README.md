@@ -10,6 +10,8 @@
 
 ---
 
+> ⚠️ **Development branch.** This is the active development branch for Minecraft 1.21.1. Code here may be unstable, untested, or mid-refactor. For stable use, see [`1.21.1-release`](https://github.com/weaversworkshop/grapplemod-skybound/tree/1.21.1-release) or [Modrinth](https://modrinth.com/mod/grapplemod-skybound).
+
 # Project Overview
 
 Skybound is an independent fork of [grapplemod-restitched](https://github.com/squeeglii/grapplemod-restitched)
@@ -20,7 +22,7 @@ customizations.
 Skybound focuses on **dynamic physics-object support**, allowing players to grapple onto Create contraptions and Sable ships.
 Enhanced multiplayer features and upgraded rope physics and rendering.
 
-Targeting Minecraft 1.21.1+ on Fabric, with NeoForge support planned.
+Targeting Minecraft 1.21.1 on Fabric, with NeoForge support planned.
 
 If you encounter a problem, please [submit a bug report!](https://github.com/weaversworkshop/grapplemod-skybound/issues)
 
@@ -51,7 +53,17 @@ which have been omitted here.
 
 # Contributing
 
-PRs and Issues are welcome! Please make a specific branch for your feature or bug-fix.
+PRs and issues are welcome!
+
+**Branching workflow.** This project uses a three-tier hierarchy:
+
+```
+1.21.1-release  ←  1.21.1-dev  ←  feature/bugfix branches
+```
+
+- **`1.21.1-release`** — stable, public-facing. Only stabilization merges from `1.21.1-dev` land here.
+- **`1.21.1-dev`** — active integration branch. PRs target this branch.
+- **Feature / bugfix branches** — your work. Always branch off `1.21.1-dev` and open one branch per feature or fix. Use a descriptive name (e.g. `feat/my-feature`, `bug/fix-rope-desync`). Do **not** commit directly to `1.21.1-dev` or `1.21.1-release`.
 
 
 ## 📦 Building/Running the project
