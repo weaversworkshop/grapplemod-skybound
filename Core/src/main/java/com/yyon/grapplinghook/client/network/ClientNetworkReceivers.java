@@ -35,6 +35,41 @@ import org.joml.Vector3f;
 @Environment(EnvType.CLIENT)
 public final class ClientNetworkReceivers {
 
+    private static final int MAX_DEFER_TICKS = 40;
+
+    private static final java.util.Queue<Deferred> deferred = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    private static final class Deferred {
+        final int hookId;
+        final Runnable task;
+        int remainingTicks;
+        Deferred(int hookId, Runnable task, int remainingTicks) {
+            this.hookId = hookId;
+            this.task = task;
+            this.remainingTicks = remainingTicks;
+        }
+    }
+
+    public static void tickDeferred() {
+        int size = deferred.size();
+        if (size == 0) return;
+        Level world = Minecraft.getInstance().level;
+        for (int i = 0; i < size; i++) {
+            Deferred d = deferred.poll();
+            if (d == null) break;
+            if (world == null) continue;
+            if (world.getEntity(d.hookId) instanceof GrapplinghookEntity) {
+                d.task.run();
+            } else if (--d.remainingTicks > 0) {
+                deferred.add(d);
+            }
+        }
+    }
+
+    public static void clearDeferred() {
+        deferred.clear();
+    }
+
     private ClientNetworkReceivers() {}
 
     public static void registerAll() {
@@ -73,29 +108,26 @@ public final class ClientNetworkReceivers {
     }
 
     private static void handleGrappleAttachHook(GrappleAttachHookS2CPayload payload, ClientPlayNetworking.Context ctx) {
-        ctx.client().execute(() -> {
-            Level world = Minecraft.getInstance().level;
+        ctx.client().execute(() -> doGrappleAttachHook(payload));
+    }
 
-            if (world == null) {
-                GrappleMod.LOGGER.warn("Network Message received in invalid context (World not present | GrappleAttachPos)");
-                return;
-            }
+    private static void doGrappleAttachHook(GrappleAttachHookS2CPayload payload) {
+        Level world = Minecraft.getInstance().level;
+        if (world == null) {
+            GrappleMod.LOGGER.warn("Network Message received in invalid context (World not present | GrappleAttachPos)");
+            return;
+        }
 
-            Entity e = world.getEntity(payload.hookId());
+        Entity e = world.getEntity(payload.hookId());
+        if (e == null) {
+            deferred.add(new Deferred(payload.hookId(), () -> doGrappleAttachHook(payload), MAX_DEFER_TICKS));
+            return;
+        }
 
-            if (e == null) {
-                GrappleMod.LOGGER.warn("GrappleAttachPos received for a hook that doesn't exist on the client side! (yet?)");
-                return;
-            }
-
-            if (e instanceof GrapplinghookEntity grapple) {
-                if (grapple.attachedWorldEntity() != null) {
-                    return;
-                }
-
-                grapple.setAttachPos(payload.attachPos());
-            }
-        });
+        if (e instanceof GrapplinghookEntity grapple) {
+            if (grapple.attachedWorldEntity() != null) return;
+            grapple.setAttachPos(payload.attachPos());
+        }
     }
 
     private static void handleRopeSegmentUpdate(RopeSegmentUpdateS2CPayload payload, ClientPlayNetworking.Context ctx) {
@@ -165,49 +197,52 @@ public final class ClientNetworkReceivers {
     }
 
     private static void handleGrappleAttach(GrappleAttachS2CPayload payload, ClientPlayNetworking.Context ctx) {
-        ctx.client().execute(() -> {
-            Level world = Minecraft.getInstance().level;
+        ctx.client().execute(() -> doGrappleAttach(payload));
+    }
 
-            if (world == null) {
-                GrappleMod.LOGGER.warn("Network Message received in invalid context (World not present | GrappleAttach)");
-                return;
-            }
+    private static void doGrappleAttach(GrappleAttachS2CPayload payload) {
+        Level world = Minecraft.getInstance().level;
+        if (world == null) {
+            GrappleMod.LOGGER.warn("Network Message received in invalid context (World not present | GrappleAttach)");
+            return;
+        }
 
-            GrapplinghookEntity grapple = resolveHookOrWarn(payload.hookId(), world, "GrappleAttach");
-            if (grapple == null) return;
+        GrapplinghookEntity grapple = world.getEntity(payload.hookId()) instanceof GrapplinghookEntity g ? g : null;
+        if (grapple == null) {
+            deferred.add(new Deferred(payload.hookId(), () -> doGrappleAttach(payload), MAX_DEFER_TICKS));
+            return;
+        }
 
-            grapple.clientAttach(payload.hookPos());
+        grapple.clientAttach(payload.hookPos());
 
-            Vector3f hp = payload.hookPos();
-            HookAttachment next = HookAttachment.fromWireTarget(
-                    payload.attachTarget(), new Vec3(hp.x, hp.y, hp.z), world);
-            grapple.setAttachmentClient(next);
+        Vector3f hp = payload.hookPos();
+        HookAttachment next = HookAttachment.fromWireTarget(
+                payload.attachTarget(), new Vec3(hp.x, hp.y, hp.z), world);
+        grapple.setAttachmentClient(next);
 
-            BlockPos hookedBlock = next instanceof HookAttachment.Block b ? b.pos() : null;
+        BlockPos hookedBlock = next instanceof HookAttachment.Block b ? b.pos() : null;
 
-            RopeSegmentHandler segmentHandler = grapple.getSegmentHandler();
-            segmentHandler.loadFromSnapshot(payload.ropeState());
+        RopeSegmentHandler segmentHandler = grapple.getSegmentHandler();
+        segmentHandler.loadFromSnapshot(payload.ropeState());
 
-            Entity holder = world.getEntity(payload.holderId());
-            if (holder == null) {
-                GrappleMod.LOGGER.warn("Network Message received in invalid context (Holder does not exist | GrappleAttach)");
-                return;
-            }
+        Entity holder = world.getEntity(payload.holderId());
+        if (holder == null) {
+            GrappleMod.LOGGER.warn("Network Message received in invalid context (Holder does not exist | GrappleAttach)");
+            return;
+        }
 
-            segmentHandler.forceSetPos(new Vec(payload.hookPos()), Vec.positionVec(holder));
+        segmentHandler.forceSetPos(new Vec(payload.hookPos()), Vec.positionVec(holder));
 
-            // Reattach via server-initiated reanchor must skip createControl; disable() would halt the hook.
-            GrapplingHookPhysicsController existing = GrappleModClient.get()
-                    .getClientControllerManager()
-                    .getController(payload.holderId());
-            if (existing != null && existing.ownsHook(payload.hookId())) {
-                return;
-            }
+        GrapplingHookPhysicsController existing = GrappleModClient.get()
+                .getClientControllerManager()
+                .getController(payload.holderId());
+        if (existing != null && existing.ownsHook(payload.hookId())) {
+            return;
+        }
 
-            GrappleModClient.get()
-                    .getClientControllerManager()
-                    .createControl(PhysicsControllers.GRAPPLING_HOOK, payload.hookId(), payload.holderId(), world, hookedBlock, payload.customization());
-        });
+        GrappleModClient.get()
+                .getClientControllerManager()
+                .createControl(PhysicsControllers.GRAPPLING_HOOK, payload.hookId(), payload.holderId(), world, hookedBlock, payload.customization());
     }
 
     private static @org.jetbrains.annotations.Nullable GrapplinghookEntity resolveHookOrWarn(int hookId, Level world, String ctx) {

@@ -2,6 +2,7 @@ package com.yyon.grapplinghook.mixin.client;
 
 import com.yyon.grapplinghook.client.GrappleModClient;
 import com.yyon.grapplinghook.client.ModKeys;
+import com.yyon.grapplinghook.client.network.ClientNetworkReceivers;
 import com.yyon.grapplinghook.client.physics.ClientPhysicsControllerTracker;
 import com.yyon.grapplinghook.config.GrappleModCommonConfig;
 import com.yyon.grapplinghook.content.item.type.IGlobalKeyObserver;
@@ -29,6 +30,8 @@ public class ClientHookMixin {
 
         if (player == null ||  Minecraft.getInstance().isPaused())
             return;
+
+        ClientNetworkReceivers.tickDeferred();
 
         ClientPhysicsControllerTracker physManager = GrappleModClient.get().getClientControllerManager();
         physManager.onClientTick(player);
@@ -69,6 +72,8 @@ public class ClientHookMixin {
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/GameRenderer;resetData()V"))
     public void handleLogOut(Screen nextScreen, boolean keepResourcePacks, CallbackInfo ci) {
         GrappleModCommonConfig.resetConfigFromServer();
+        GrappleModClient.get().getClientControllerManager().resetForDisconnect();
+        ClientNetworkReceivers.clearDeferred();
     }
 
 

@@ -51,6 +51,15 @@ public class ClientPhysicsControllerTracker {
 	public double rocketDecreaseTick = 0.0;
 
 
+	public void resetForDisconnect() {
+		this.controllers.clear();
+		this.controllerPos.clear();
+		this.enderLaunchTimer.clear();
+		this.rocketFuel = 1.0;
+		this.rocketIncreaseTick = 0.0;
+		this.rocketDecreaseTick = 0.0;
+	}
+
 	public void onClientTick(Player player) {
 		this.rocketFuel += this.rocketIncreaseTick;
 

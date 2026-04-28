@@ -121,6 +121,11 @@ public final class HookPersistenceManager {
         level.addFreshEntity(hook);
         hook.getSegmentHandler().loadFromSnapshot(ph.ropeSnapshot());
         ServerHookEntityTracker.addGrappleEntity(player, hook);
+
+        com.yyon.grapplinghook.content.item.GrapplehookItem grappleItem = com.yyon.grapplinghook.content.registry.internal.ModItems.GRAPPLING_HOOK.get();
+        if (ph.mainHand()) grappleItem.setHookEntityMainHand(player, hook);
+        else grappleItem.setHookEntityOffHand(player, hook);
+
         return hook;
     }
 
